@@ -1,3 +1,5 @@
+# !!!!This library is not ready for use, it still in development. No build or Test are currently passing
+
 # TiKV Client for Zig
 
 A Zig client library for TiKV, the distributed transactional key-value database.
