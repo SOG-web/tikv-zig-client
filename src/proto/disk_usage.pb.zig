@@ -2,8 +2,8 @@
 ///! package disk_usage
 const std = @import("std");
 
-const protobuf = @import("protobuf");
-const fd = protobuf.fd;
+const pb = @import("protobuf");
+const fd = pb.fd;
 /// import package rustproto
 const rustproto = @import("rustproto.pb.zig");
 

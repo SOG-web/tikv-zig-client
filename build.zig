@@ -193,28 +193,40 @@ pub fn build(b: *std.Build) !void {
     const kvproto_proto_dir = "third_party/_kvproto_src/proto";
     const kvproto_include_dir = "third_party/_kvproto_src/include";
 
-    // Build the full list of .proto sources
-    var proto_list: std.ArrayListUnmanaged([]const u8) = .empty;
+    // Build the full list of .proto sources (split: main proto vs include proto)
+    var proto_list_main: std.ArrayListUnmanaged([]const u8) = .empty;
+    var proto_list_inc: std.ArrayListUnmanaged([]const u8) = .empty;
     defer {
         // No need to free the strings; the build graph can keep them,
-        // but free the container to be tidy.
-        proto_list.deinit(b.allocator);
+        // but free the containers to be tidy.
+        proto_list_main.deinit(b.allocator);
+        proto_list_inc.deinit(b.allocator);
     }
 
-    try collectProtoFiles(b, kvproto_proto_dir, &proto_list);
-    try collectProtoFiles(b, kvproto_include_dir, &proto_list);
+    try collectProtoFiles(b, kvproto_proto_dir, &proto_list_main);
+    try collectProtoFiles(b, kvproto_include_dir, &proto_list_inc);
 
-    const protoc_step = protobuf.RunProtocStep.create(b, protobuf_dep.builder, target, .{
-        // out directory for the generated zig files
+    const protoc_step_main = protobuf.RunProtocStep.create(b, protobuf_dep.builder, target, .{
         .destination_directory = b.path("src/proto"),
-        .source_files = proto_list.items, // <- pass the collected list here
+        .source_files = proto_list_main.items,
         .include_directories = &.{
             kvproto_proto_dir,
             kvproto_include_dir,
         },
     });
 
-    gen_proto.dependOn(&protoc_step.step);
+    // Second protoc step: generate kvproto/include -> src/proto/include (for organization/tracking)
+    const protoc_step_inc = protobuf.RunProtocStep.create(b, protobuf_dep.builder, target, .{
+        .destination_directory = b.path("src/proto/include"),
+        .source_files = proto_list_inc.items,
+        .include_directories = &.{
+            kvproto_proto_dir,
+            kvproto_include_dir,
+        },
+    });
+
+    gen_proto.dependOn(&protoc_step_main.step);
+    gen_proto.dependOn(&protoc_step_inc.step);
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
