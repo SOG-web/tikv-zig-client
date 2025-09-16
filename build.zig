@@ -207,7 +207,7 @@ pub fn build(b: *std.Build) !void {
     try collectProtoFiles(b, kvproto_include_dir, &proto_list_inc);
 
     const protoc_step_main = protobuf.RunProtocStep.create(b, protobuf_dep.builder, target, .{
-        .destination_directory = b.path("src/proto"),
+        .destination_directory = b.path("generated/proto"),
         .source_files = proto_list_main.items,
         .include_directories = &.{
             kvproto_proto_dir,
@@ -217,7 +217,7 @@ pub fn build(b: *std.Build) !void {
 
     // Second protoc step: generate kvproto/include -> src/proto/include (for organization/tracking)
     const protoc_step_inc = protobuf.RunProtocStep.create(b, protobuf_dep.builder, target, .{
-        .destination_directory = b.path("src/proto/include"),
+        .destination_directory = b.path("generated/proto/include"),
         .source_files = proto_list_inc.items,
         .include_directories = &.{
             kvproto_proto_dir,

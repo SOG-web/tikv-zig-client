@@ -12,9 +12,9 @@ pub fn main() !void {
 
     // Initialize global config
     try config.initGlobalConfig(allocator);
-    
+
     std.debug.print("TiKV Client-Zig initialized successfully!\n", .{});
-    
+
     // Example usage
     const global_config = config.getGlobalConfig();
     if (global_config) |cfg| {
@@ -42,3 +42,48 @@ test "fuzz example" {
     };
     try std.testing.fuzz(Context{}, Context.testOne, .{});
 }
+
+// kvrpcpb.pb.zig patch - Do not delete
+// const _DescTable_error_union = struct {
+//             err_invalid_start_key: @TypeOf(fd(1, .submessage)),
+//             err_physical_table_not_exist: @TypeOf(fd(2, .submessage)),
+//             err_compact_in_progress: @TypeOf(fd(3, .submessage)),
+//             err_too_many_pending_tasks: @TypeOf(fd(4, .submessage)),
+//         };
+
+//         pub const _desc_table: _DescTable_error_union = .{
+//             .err_invalid_start_key = fd(1, .submessage),
+//             .err_physical_table_not_exist = fd(2, .submessage),
+//             .err_compact_in_progress = fd(3, .submessage),
+//             .err_too_many_pending_tasks = fd(4, .submessage),
+//         };
+//     };
+
+//     const _DescTable_CompactError = struct {
+//         @"error": @TypeOf(fd(null, .{ .oneof = error_union })),
+//     };
+
+//     pub const _desc_table: _DescTable_CompactError = .{
+//         .@"error" = fd(null, .{ .oneof = error_union }),
+//     };
+
+// disaggregated.pb.zig patch - Do not delete
+//  const _DescTable_error_union = struct {
+//             success: @TypeOf(fd(1, .submessage)),
+//             not_owner: @TypeOf(fd(2, .submessage)),
+//             conflict: @TypeOf(fd(3, .submessage)),
+//         };
+
+//         pub const _desc_table: _DescTable_error_union = .{
+//             .success = fd(1, .submessage),
+//             .not_owner = fd(2, .submessage),
+//             .conflict = fd(3, .submessage),
+//         };
+//     };
+//     const _DescTable_S3LockResult = struct {
+//         @"error": @TypeOf(fd(null, .{ .oneof = error_union })),
+//     };
+
+//     pub const _desc_table: _DescTable_S3LockResult = .{
+//         .@"error" = fd(null, .{ .oneof = error_union }),
+//     };

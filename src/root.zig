@@ -10,7 +10,6 @@ pub const oracle = @import("oracle/mod.zig");
 pub const config = @import("config/mod.zig");
 pub const errorM = @import("error/mod.zig");
 pub const pd = @import("pd/mod.zig");
-pub const c = @import("c.zig");
 // pub const tikvrpc = @import("tikvrpc/mod.zig");
 
 pub fn bufferedPrint() !void {
@@ -45,5 +44,4 @@ test "aggregate modules" {
     _ = oracle;
     _ = pd;
     //  _ = tikvrpc;
-    _ = c;
 }

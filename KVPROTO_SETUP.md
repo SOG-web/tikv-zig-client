@@ -1,10 +1,89 @@
-# TiKV Client-Zig: kvproto UPB Setup Guide
+# TiKV Client-Zig: kvproto Setup (Zig-native)
 
-This document explains how to set up kvproto protobuf bindings using Google's UPB (μpb) library for the TiKV client-zig project.
+Updated: 2025-09 — We now generate Zig protobuf bindings directly using the external `zig-protobuf` package. No C/UPB build, Bazel, or `@cImport` is required. The old UPB-based instructions are deprecated and preserved at the bottom of this file for reference.
 
-## Overview
+## Summary of the new flow
 
-The TiKV client uses kvproto (TiKV's protobuf definitions) to communicate with TiKV servers. This project generates C bindings using UPB and exposes them to Zig via `@cImport`.
+- We vendor kvproto sources under `third_party/_kvproto_src/`.
+- We declare a dependency on `zig-protobuf` in `build.zig.zon` using the key `protobuf`.
+- The build step `zig build gen-proto` runs `protoc` via `zig-protobuf` and emits pure Zig `.pb.zig` files.
+- Output layout:
+  - `src/proto/` — all generated Zig files (flat, to satisfy simple relative imports)
+  - `src/proto/include/` — duplicated output for files originating from `third_party/_kvproto_src/include/` (for easier tracking)
+
+## Prerequisites
+
+- Zig 0.15.1+
+- Protobuf compiler `protoc` 3.x or newer (to run the generator)
+
+## One-time setup
+
+1) Add `zig-protobuf` to `build.zig.zon` dependencies (example):
+
+```zig
+.dependencies = .{
+    .protobuf = .{
+        .url = "https://github.com/mochalins/zig-protobuf/archive/refs/heads/root_namespace.tar.gz",
+        .hash = "<run `zig build --fetch` to obtain>",
+    },
+};
+```
+
+2) Wire the dependency in `build.zig` and create the generation step (already present in this repo):
+
+```zig
+const protobuf_dep = b.dependency("protobuf", .{ .target = target, .optimize = optimize });
+
+// Collect sources from both kvproto roots
+try collectProtoFiles(b, "third_party/_kvproto_src/proto", &proto_list_main);
+try collectProtoFiles(b, "third_party/_kvproto_src/include", &proto_list_inc);
+
+// Emit everything to src/proto (flat) and also include/ to mirror origin
+const protoc_step_main = protobuf.RunProtocStep.create(b, protobuf_dep.builder, target, .{
+    .destination_directory = b.path("src/proto"),
+    .source_files = proto_list_main.items,
+    .include_directories = &.{
+        "third_party/_kvproto_src/proto",
+        "third_party/_kvproto_src/include",
+    },
+});
+const protoc_step_inc = protobuf.RunProtocStep.create(b, protobuf_dep.builder, target, .{
+    .destination_directory = b.path("src/proto/include"),
+    .source_files = proto_list_inc.items,
+    .include_directories = &.{
+        "third_party/_kvproto_src/proto",
+        "third_party/_kvproto_src/include",
+    },
+});
+```
+
+3) Generate the Zig files
+
+```bash
+zig build gen-proto
+```
+
+## Known notes for Zig 0.15.1
+
+- The generator may emit untyped struct literals like `pub const _desc_table = .{ ... };`.
+  - Zig 0.15.1 requires a type context for `.{}`. We added a local, minimal typed wrapper in the few affected union/message spots as a temporary fix.
+  - Upstream `zig-protobuf` will address this; update the dependency when the fix lands.
+
+## What changed vs. the old UPB approach
+
+- No Bazel, no UPB runtime vendoring, no C/`@cImport`.
+- All protobuf code is Zig (`*.pb.zig`).
+- Simpler build graph and faster iteration.
+
+---
+
+## Legacy (deprecated): UPB/μpb setup
+
+The instructions below describe the previous C/UPB-based flow. They are retained for historical reference only and should not be followed for the current codebase.
+
+## Overview (deprecated)
+
+The previous approach generated C bindings using UPB and exposed them to Zig via `@cImport`. This section is retained for reference only.
 
 ## Prerequisites
 
