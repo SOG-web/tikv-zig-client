@@ -122,6 +122,8 @@ pub fn build(b: *std.Build) !void {
     mod.addLibraryPath(b.path(openssl_path ++ "/lib"));
     mod.linkSystemLibrary("ssl", .{});
     mod.linkSystemLibrary("crypto", .{});
+    // Link system zlib for compression wrapper
+    mod.linkSystemLibrary("z", .{});
 
     const exe = b.addExecutable(.{
         .name = "client_zig",
@@ -145,6 +147,7 @@ pub fn build(b: *std.Build) !void {
     exe.addLibraryPath(b.path(openssl_path ++ "/lib"));
     exe.linkSystemLibrary("ssl");
     exe.linkSystemLibrary("crypto");
+    exe.linkSystemLibrary("z");
     exe.linkLibC();
 
     b.installArtifact(exe);
@@ -169,6 +172,7 @@ pub fn build(b: *std.Build) !void {
     mod_tests.addLibraryPath(b.path(openssl_path ++ "/lib"));
     mod_tests.linkSystemLibrary("ssl");
     mod_tests.linkSystemLibrary("crypto");
+    mod_tests.linkSystemLibrary("z");
     mod_tests.linkLibC();
 
     // A run step that will run the test executable.
@@ -183,6 +187,7 @@ pub fn build(b: *std.Build) !void {
     exe_tests.addLibraryPath(b.path(openssl_path ++ "/lib"));
     exe_tests.linkSystemLibrary("ssl");
     exe_tests.linkSystemLibrary("crypto");
+    exe_tests.linkSystemLibrary("z");
     exe_tests.linkLibC();
 
     // A run step that will run the second test executable.

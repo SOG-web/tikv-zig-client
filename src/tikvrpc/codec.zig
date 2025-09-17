@@ -35,6 +35,7 @@ pub const Response = struct {
         RawScan: kvrpcpb.RawScanResponse,
         RawDeleteRange: kvrpcpb.RawDeleteRangeResponse,
         RawBatchScan: kvrpcpb.RawBatchScanResponse,
+        ReadIndex: kvrpcpb.ReadIndexResponse,
         Coprocessor: coprocessor.Response,
         PessimisticLock: kvrpcpb.PessimisticLockResponse,
         PessimisticRollback: kvrpcpb.PessimisticRollbackResponse,
@@ -79,6 +80,7 @@ pub fn toBatchCommandsRequest(req: *const Request) CodecError!tikvpb.BatchComman
         .CheckTxnStatus => |m| out.cmd = .{ .CheckTxnStatus = m },
         .TxnHeartBeat => |m| out.cmd = .{ .TxnHeartBeat = m },
         .CheckSecondaryLocks => |m| out.cmd = .{ .CheckSecondaryLocks = m },
+        .ReadIndex => |m| out.cmd = .{ .ReadIndex = m },
         .Empty => |_| out.cmd = .{ .Empty = .{} },
         // Unsupported in batch commands path
         .CoprocessorStream, .BatchCop, .MPPTask, .MPPConn, .MPPCancel, .MPPAlive, .MvccGetByKey, .MvccGetByStartTs, .SplitRegion, .DebugGetRegionProperties, .UnsafeDestroyRange, .GetKeyTTL, .RawCompareAndSwap => return CodecError.Unsupported,
@@ -138,6 +140,7 @@ pub fn fromBatchCommandsResponse(res: *const tikvpb.BatchCommandsResponse.Respon
             .RawCoprocessor => |m| .{ .RawCoprocessor = m },
             .FlashbackToVersion => |m| .{ .FlashbackToVersion = m },
             .PrepareFlashbackToVersion => |m| .{ .PrepareFlashbackToVersion = m },
+            .ReadIndex => |m| .{ .ReadIndex = m },
             .Empty => |m| .{ .Empty = m },
         },
     };

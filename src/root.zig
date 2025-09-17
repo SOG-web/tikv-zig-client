@@ -9,6 +9,7 @@ pub const config = @import("config/mod.zig");
 pub const errorM = @import("error/mod.zig");
 pub const pd = @import("pd/mod.zig");
 pub const tikvrpc = @import("tikvrpc/mod.zig");
+pub const grpc_client = @import("grpc_client/mod.zig");
 
 pub fn bufferedPrint() !void {
     // Stdout is for the actual output of your application, for example if you
@@ -40,4 +41,5 @@ test "aggregate modules" {
     _ = oracle;
     _ = pd;
     _ = tikvrpc;
+    _ = grpc_client;
 }

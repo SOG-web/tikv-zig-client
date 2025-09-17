@@ -41,6 +41,7 @@ pub const RequestType = enum {
     RawScan,
     GetKeyTTL,
     RawCompareAndSwap,
+    RawCoprocessor,
 
     // Admin/Unsafe
     UnsafeDestroyRange,
@@ -70,11 +71,17 @@ pub const RequestType = enum {
     SplitRegion,
     DebugGetRegionProperties,
 
+    // ReadIndex
+    ReadIndex,
+
     // Empty
     Empty,
 
     // Fallback
     Unknown,
+
+    // CheckLeader
+    CheckLeader,
 };
 
 /// Request priority (maps to kvrpcpb.CommandPri in send path)
@@ -82,6 +89,9 @@ pub const Priority = enum { low, normal, high };
 
 /// Replica read preference (maps to follower/leader preferences in Go client)
 pub const ReplicaRead = enum { leader, follower, leader_and_follower };
+
+/// Per-call compression algorithm for gRPC message payloads
+pub const Compression = enum { none, gzip, deflate };
 
 /// Disk full behavior (subset)
 pub const DiskFullOpt = enum { default, forbid, allow };
@@ -95,6 +105,10 @@ pub const RequestOptions = struct {
     keep_order: bool = false,
     resource_group_tag: []const u8 = &[_]u8{},
     disk_full_opt: DiskFullOpt = .default,
+    // gRPC message-level compression for this request
+    compression_alg: Compression = .none,
+    // Per-call deadline in milliseconds (grpc-timeout header); null means no header
+    timeout_ms: ?u64 = null,
     // ---- Moved from Request for ergonomics ----
     read_replica_scope: []const u8 = &.{},
     // remove txnScope after tidb removed txnScope (kept for compatibility)
@@ -134,6 +148,12 @@ pub const MPPStreamResponse = struct {
     lease: Lease = .{},
 };
 
+//TODO: there is a raft client in Go (it is a stream), but am yet to see it is usage in the client
+//TODO: there is a batch command client in Go (it is a stream), but am yet to see it is usage in the client "/tikvpb.Tikv/BatchCommands"
+// TODO: same thing for Tikv_SnapshotClient "/tikvpb.Tikv/Snapshot"
+// TODO: same thing for Tikv_BatchRaftClient "/tikvpb.Tikv/BatchRaft"
+// TODO: same thing for Tikv_RaftClient "/tikvpb.Tikv/Raft"
+
 /// Union payload matching RequestType
 pub const Payload = union(RequestType) {
     Get: kvrpcpb.GetRequest,
@@ -163,6 +183,7 @@ pub const Payload = union(RequestType) {
     RawScan: kvrpcpb.RawScanRequest,
     GetKeyTTL: kvrpcpb.RawGetKeyTTLRequest,
     RawCompareAndSwap: kvrpcpb.RawCASRequest,
+    RawCoprocessor: kvrpcpb.RawCoprocessorRequest,
 
     UnsafeDestroyRange: kvrpcpb.UnsafeDestroyRangeRequest,
 
@@ -187,9 +208,14 @@ pub const Payload = union(RequestType) {
     SplitRegion: kvrpcpb.SplitRegionRequest,
     DebugGetRegionProperties: debugpb.GetRegionPropertiesRequest,
 
+    ReadIndex: kvrpcpb.ReadIndexRequest,
+
     Empty: void,
 
     Unknown: void,
+
+    //TODO: Below are un-Implemented types
+    CheckLeader: kvrpcpb.CheckLeaderRequest,
 };
 
 /// The primary request wrapper (Go's tikvrpc.Request analogue)
@@ -374,6 +400,10 @@ pub const Request = struct {
         return .{ .typ = .DebugGetRegionProperties, .payload = .{ .DebugGetRegionProperties = req }, .opts = opts };
     }
 
+    pub fn fromReadIndex(req: kvrpcpb.ReadIndexRequest, opts: RequestOptions) Request {
+        return .{ .typ = .ReadIndex, .payload = .{ .ReadIndex = req }, .opts = opts };
+    }
+
     pub fn fromEmpty() Request {
         return .{ .typ = .Empty, .payload = .{ .Empty = {} }, .opts = .{} };
     }
@@ -445,6 +475,7 @@ pub fn setContext(req: *Request, region: ?*const metapb.Region, peer: ?*const me
         .DebugGetRegionProperties => |*m| {
             _ = m; // debugpb request does not carry kvrpcpb.Context
         },
+        .ReadIndex => |*m| m.context = req.context,
         .Empty => {},
         .Unknown => {},
     }

@@ -116,3 +116,5 @@ zig build test
 Apache License 2.0
 
 
+BatchCommands streaming.
+TLS + ALPN.
