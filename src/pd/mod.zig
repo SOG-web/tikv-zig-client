@@ -13,6 +13,6 @@ pub const Store = types.Store;
 
 test {
     std.testing.refAllDecls(@This());
-    // _ = @import("tests/http_smoke_test.zig");
+    _ = @import("tests/http_smoke_test.zig");
     _ = @import("tests/grpc_smoke_test.zig");
 }

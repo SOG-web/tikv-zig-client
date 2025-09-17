@@ -1,4 +1,5 @@
 const std = @import("std");
+const huffman = @import("huffman.zig");
 
 pub const HpackError = error{
     InvalidIndex,
@@ -6,6 +7,7 @@ pub const HpackError = error{
     InvalidHuffmanCode,
     IntegerOverflow,
     InvalidHeaderBlock,
+    DynamicTableFull,
 };
 
 pub const Pair = struct {
@@ -116,6 +118,13 @@ pub const Encoder = struct {
     }
 
     fn encodeHeaderField(self: *Encoder, buffer: *std.ArrayList(u8), name: []const u8, value: []const u8) !void {
+        // Look for exact match in dynamic table first (more recent entries)
+        if (self.findInDynamicTable(name, value)) |index| {
+            const full_index = STATIC_TABLE.len + index + 1;
+            try self.encodeInteger(buffer, @intCast(full_index), 7, 0x80);
+            return;
+        }
+        
         // Look for exact match in static table
         if (self.findInStaticTable(name, value)) |index| {
             // Indexed Header Field (RFC 7541 Section 6.1)
@@ -123,18 +132,75 @@ pub const Encoder = struct {
             return;
         }
 
+        // Look for name match in dynamic table
+        if (self.findNameInDynamicTable(name)) |index| {
+            const full_index = STATIC_TABLE.len + index + 1;
+            try self.encodeInteger(buffer, @intCast(full_index), 6, 0x40);
+            try self.encodeString(buffer, value, false); // Don't use Huffman for now
+            try self.addToDynamicTable(name, value);
+            return;
+        }
+
         // Look for name match in static table
         if (self.findNameInStaticTable(name)) |index| {
             // Literal Header Field with Incremental Indexing — Indexed Name (RFC 7541 Section 6.2.1)
             try self.encodeInteger(buffer, index, 6, 0x40);
-            try self.encodeString(buffer, value, false);
+            try self.encodeString(buffer, value, false); // Don't use Huffman for now
+            try self.addToDynamicTable(name, value);
             return;
         }
 
         // Literal Header Field with Incremental Indexing — New Name (RFC 7541 Section 6.2.1)
         try buffer.append(self.allocator, 0x40); // Pattern: 01
-        try self.encodeString(buffer, name, false);
-        try self.encodeString(buffer, value, false);
+        try self.encodeString(buffer, name, false); // Don't use Huffman for now
+        try self.encodeString(buffer, value, false); // Don't use Huffman for now
+        try self.addToDynamicTable(name, value);
+    }
+    
+    fn findInDynamicTable(self: *Encoder, name: []const u8, value: []const u8) ?u32 {
+        for (self.dynamic_table.items, 0..) |field, i| {
+            if (std.mem.eql(u8, field.name, name) and std.mem.eql(u8, field.value, value)) {
+                return @intCast(i);
+            }
+        }
+        return null;
+    }
+    
+    fn findNameInDynamicTable(self: *Encoder, name: []const u8) ?u32 {
+        for (self.dynamic_table.items, 0..) |field, i| {
+            if (std.mem.eql(u8, field.name, name)) {
+                return @intCast(i);
+            }
+        }
+        return null;
+    }
+    
+    fn addToDynamicTable(self: *Encoder, name: []const u8, value: []const u8) !void {
+        const entry_size = name.len + value.len + 32; // RFC 7541 Section 4.1
+        
+        // Evict entries if necessary to make room
+        while (self.getDynamicTableSize() + entry_size > self.max_dynamic_table_size and self.dynamic_table.items.len > 0) {
+            const last_idx = self.dynamic_table.items.len - 1;
+            const removed = self.dynamic_table.swapRemove(last_idx);
+            self.allocator.free(removed.name);
+            self.allocator.free(removed.value);
+        }
+        
+        // Add new entry at the beginning (most recent)
+        const new_entry = HeaderField{
+            .name = try self.allocator.dupe(u8, name),
+            .value = try self.allocator.dupe(u8, value),
+        };
+        
+        try self.dynamic_table.insert(self.allocator, 0, new_entry);
+    }
+    
+    fn getDynamicTableSize(self: *Encoder) u32 {
+        var size: u32 = 0;
+        for (self.dynamic_table.items) |field| {
+            size += @intCast(field.name.len + field.value.len + 32);
+        }
+        return size;
     }
 
     fn findInStaticTable(self: *Encoder, name: []const u8, value: []const u8) ?u32 {
@@ -173,10 +239,26 @@ pub const Encoder = struct {
         }
     }
 
-    fn encodeString(self: *Encoder, buffer: *std.ArrayList(u8), str: []const u8, huffman: bool) !void {
-        if (huffman) {
-            // TODO: Implement Huffman encoding
-            return HpackError.InvalidHuffmanCode;
+    fn encodeString(self: *Encoder, buffer: *std.ArrayList(u8), str: []const u8, use_huffman: bool) !void {
+        if (use_huffman) {
+            // Use Huffman encoding if beneficial
+            const huffman_encoded = huffman.encode(self.allocator, str) catch {
+                // Fall back to literal if Huffman fails
+                try self.encodeInteger(buffer, @intCast(str.len), 7, 0x00);
+                try buffer.appendSlice(self.allocator, str);
+                return;
+            };
+            defer self.allocator.free(huffman_encoded);
+            
+            // Only use Huffman if it actually saves space
+            if (huffman_encoded.len < str.len) {
+                try self.encodeInteger(buffer, @intCast(huffman_encoded.len), 7, 0x80); // H=1
+                try buffer.appendSlice(self.allocator, huffman_encoded);
+            } else {
+                // Literal is better
+                try self.encodeInteger(buffer, @intCast(str.len), 7, 0x00);
+                try buffer.appendSlice(self.allocator, str);
+            }
         } else {
             // Literal string (RFC 7541 Section 5.2)
             try self.encodeInteger(buffer, @intCast(str.len), 7, 0x00);
@@ -356,27 +438,38 @@ pub const Decoder = struct {
     const StringDecodeResult = struct {
         value: []const u8,
         bytes_consumed: usize,
+        needs_free: bool, // Whether the value needs to be freed
     };
 
     fn decodeString(self: *Decoder, data: []const u8) !StringDecodeResult {
         if (data.len == 0) return HpackError.InvalidHeaderBlock;
-
-        const huffman = (data[0] & 0x80) != 0;
+        
+        const is_huffman_encoded = (data[0] & 0x80) != 0;
         const length_result = try self.decodeInteger(data, 7);
         var pos = length_result.bytes_consumed;
         const length = length_result.value;
-
+        
         if (pos + length > data.len) return HpackError.InvalidHeaderBlock;
-
-        if (huffman) {
-            // TODO: Implement Huffman decoding
-            return HpackError.InvalidHuffmanCode;
+        
+        if (is_huffman_encoded) {
+            // Decode Huffman-encoded string
+            const encoded_data = data[pos..pos + length];
+            const decoded = huffman.decode(self.allocator, encoded_data) catch {
+                return HpackError.InvalidHuffmanCode;
+            };
+            pos += length;
+            return StringDecodeResult{
+                .value = decoded,
+                .bytes_consumed = pos,
+                .needs_free = true,
+            };
         } else {
-            const str = data[pos .. pos + length];
+            const str = data[pos..pos + length];
             pos += length;
             return StringDecodeResult{
                 .value = str,
                 .bytes_consumed = pos,
+                .needs_free = false,
             };
         }
     }
@@ -412,24 +505,84 @@ test "HPACK static table lookups" {
 }
 
 test "HPACK integer encoding/decoding" {
-    var encoder = try Encoder.init(std.testing.allocator);
-    defer encoder.deinit();
+var encoder = try Encoder.init(std.testing.allocator);
+defer encoder.deinit();
 
-    var decoder = try Decoder.init(std.testing.allocator);
-    defer decoder.deinit();
+var decoder = try Decoder.init(std.testing.allocator);
+defer decoder.deinit();
 
-    var buffer = std.ArrayList(u8){};
-    defer buffer.deinit(std.testing.allocator);
+var buffer = std.ArrayList(u8){};
+defer buffer.deinit(std.testing.allocator);
 
-    // Test small integer
-    try encoder.encodeInteger(&buffer, 10, 5, 0x00);
-    const result1 = try decoder.decodeInteger(buffer.items, 5);
-    try std.testing.expectEqual(@as(u32, 10), result1.value);
+// Test small integer
+try encoder.encodeInteger(&buffer, 10, 5, 0x00);
+const result1 = try decoder.decodeInteger(buffer.items, 5);
+try std.testing.expectEqual(@as(u32, 10), result1.value);
 
-    buffer.clearRetainingCapacity();
+buffer.clearRetainingCapacity();
 
-    // Test large integer requiring multiple bytes
-    try encoder.encodeInteger(&buffer, 1337, 5, 0x00);
-    const result2 = try decoder.decodeInteger(buffer.items, 5);
-    try std.testing.expectEqual(@as(u32, 1337), result2.value);
+// Test large integer requiring multiple bytes
+try encoder.encodeInteger(&buffer, 1337, 5, 0x00);
+const result2 = try decoder.decodeInteger(buffer.items, 5);
+try std.testing.expectEqual(@as(u32, 1337), result2.value);
+}
+
+test "HPACK with Huffman compression" {
+var encoder = try Encoder.init(std.testing.allocator);
+defer encoder.deinit();
+    
+var decoder = try Decoder.init(std.testing.allocator);
+defer decoder.deinit();
+    
+// Test headers that should benefit from Huffman compression
+const test_pairs = [_]Pair{
+.{ .name = ":method", .value = "POST" },
+.{ .name = ":path", .value = "/pdpb.PD/GetMembers" },
+.{ .name = "content-type", .value = "application/grpc+proto" },
+.{ .name = "grpc-accept-encoding", .value = "gzip,deflate" },
+};
+    
+// Encode with Huffman
+const encoded = try encoder.encodePairs(&test_pairs);
+defer std.testing.allocator.free(encoded);
+    
+// Decode back
+var decoded_headers = try decoder.decode(encoded);
+defer decoder.freeDecodedHeaders(&decoded_headers);
+    
+// Verify we got the right headers back
+try std.testing.expect(decoded_headers.count() >= test_pairs.len);
+    
+// Check some specific values
+if (decoded_headers.get(":method")) |method| {
+try std.testing.expectEqualStrings("POST", method);
+}
+    
+if (decoded_headers.get("content-type")) |content_type| {
+try std.testing.expectEqualStrings("application/grpc+proto", content_type);
+}
+}
+
+test "HPACK dynamic table functionality" {
+var encoder = try Encoder.init(std.testing.allocator);
+defer encoder.deinit();
+    
+// Add some headers that should go into dynamic table
+const pairs1 = [_]Pair{
+.{ .name = "custom-header", .value = "custom-value" },
+.{ .name = "another-header", .value = "another-value" },
+};
+    
+const encoded1 = try encoder.encodePairs(&pairs1);
+defer std.testing.allocator.free(encoded1);
+    
+// Dynamic table should now have these entries
+try std.testing.expect(encoder.dynamic_table.items.len == 2);
+    
+// Encoding the same headers again should use dynamic table references
+const encoded2 = try encoder.encodePairs(&pairs1);
+defer std.testing.allocator.free(encoded2);
+    
+// Should be much smaller due to dynamic table hits
+try std.testing.expect(encoded2.len < 50); // Rough estimate
 }

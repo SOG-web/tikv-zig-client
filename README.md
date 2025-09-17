@@ -118,3 +118,14 @@ Apache License 2.0
 
 BatchCommands streaming.
 TLS + ALPN.
+Add TLS + ALPN(h2) Support
+
+Enable HTTPS connections to PD
+Proper HTTP/2 over TLS with ALPN negotiation
+Support for production PD deployments with TLS
+
+Expand gRPC Client
+
+Add streaming RPC support (server/client/bidirectional streaming)
+Add more PD API methods (GetRegion, GetStore, etc.)
+Add TiKV client methods

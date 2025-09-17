@@ -29,6 +29,7 @@ pub const http2 = struct {
     pub const stream = @import("http2/stream.zig");
     pub const hpack = @import("http2/hpack.zig");
     pub const hpack_compliant = @import("http2/hpack_compliant.zig");
+    pub const huffman = @import("http2/huffman.zig");
 
     test {
         _ = connection;
@@ -36,6 +37,7 @@ pub const http2 = struct {
         _ = stream;
         _ = hpack;
         _ = hpack_compliant;
+        _ = huffman;
     }
 };
 
@@ -44,5 +46,6 @@ test {
     _ = Transport;
     _ = features;
     _ = http2;
-    //_ = @import("tests/transport_test.zig");
+    // _ = @import("tests/transport_test.zig");
+    _ = @import("tests/pool_test.zig");
 }
