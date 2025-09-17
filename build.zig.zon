@@ -46,11 +46,11 @@
         },
         // External protobuf implementation for Zig 0.15.1
         .protobuf = .{
-            .url = "https://github.com/mochalins/zig-protobuf/archive/refs/heads/root_namespace.tar.gz",
+            .url = "https://github.com/mochalins/zig-protobuf/archive/refs/heads/fix_desc_table_escaping.tar.gz",
             // NOTE: Replace the placeholder hash below by running:
             //   zig build --fetch
             // Zig will report the expected hash for this URL; copy it here.
-            .hash = "protobuf-2.0.0-0e82ak3SJABcjHscc-uHHWL9jKlX4WgHjwN_piBnJPSK",
+            .hash = "protobuf-2.0.0-0e82amjSJABwg5WIfA2zwoTiau1Py0gnPMAQb31waJZ3",
         },
         // .grpc_zig = .{
         //     .url = "https://github.com/ziglana/gRPC-zig/archive/refs/heads/main.tar.gz",
