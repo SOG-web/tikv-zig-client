@@ -28,6 +28,15 @@ pub const http2 = struct {
     pub const frame = @import("http2/frame.zig");
     pub const stream = @import("http2/stream.zig");
     pub const hpack = @import("http2/hpack.zig");
+    pub const hpack_compliant = @import("http2/hpack_compliant.zig");
+
+    test {
+        _ = connection;
+        _ = frame;
+        _ = stream;
+        _ = hpack;
+        _ = hpack_compliant;
+    }
 };
 
 test {

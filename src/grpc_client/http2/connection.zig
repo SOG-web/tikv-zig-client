@@ -1,7 +1,7 @@
 const std = @import("std");
 const frame = @import("frame.zig");
 const stream = @import("stream.zig");
-const hpack = @import("hpack.zig");
+const hpack = @import("hpack_compliant.zig");
 
 pub const ConnectionError = error{
     ProtocolError,

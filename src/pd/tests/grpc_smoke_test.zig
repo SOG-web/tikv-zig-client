@@ -49,7 +49,7 @@ test "pd grpc smoke: GetMembers" {
     std.debug.print("PD gRPC request: {s}\n", .{req_bytes});
 
     // Call PD.GetMembers
-    const resp_bytes = client.call("/pdpb.PD/GetMembers", req_bytes, .none, 5000) catch |err| {
+    const resp_bytes = client.call("/pdpb.PD/GetMembers", req_bytes, .gzip, 5000) catch |err| {
         std.debug.print("PD gRPC call failed: {}\n", .{err});
         return;
     };
@@ -65,5 +65,5 @@ test "pd grpc smoke: GetMembers" {
     };
     defer freeMembers(gpa, &resp);
 
-    std.debug.print("PD members: {d}\n", .{resp.members.items.len});
+    std.debug.print("PD members: {any}\n", .{resp});
 }

@@ -5,7 +5,7 @@ const http2 = struct {
     pub const frame = @import("http2/frame.zig");
     pub const stream = @import("http2/stream.zig");
 };
-const hpack = @import("http2/hpack.zig");
+const hpack = @import("http2/hpack_compliant.zig");
 const framing = @import("grpc/framing.zig");
 const compression = @import("features/compression.zig");
 
@@ -297,14 +297,7 @@ pub const Transport = struct {
                     const decode_result = conn_ptr.decoder.decode(f.payload) catch null;
                     if (decode_result) |hdrs_val| {
                         var hdrs = hdrs_val; // make mutable copy for iterator and deinit
-                        defer {
-                            var it = hdrs.iterator();
-                            while (it.next()) |entry| {
-                                self.allocator.free(entry.key_ptr.*);
-                                self.allocator.free(entry.value_ptr.*);
-                            }
-                            hdrs.deinit();
-                        }
+                        defer conn_ptr.decoder.freeDecodedHeaders(&hdrs);
                         // If this is non-trailing HEADERS (no END_STREAM), validate and capture response metadata
                         if ((f.flags & http2.frame.FrameFlags.END_STREAM) == 0) {
                             saw_initial_headers = true;
