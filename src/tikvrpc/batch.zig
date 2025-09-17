@@ -4,18 +4,19 @@ const request_mod = @import("request.zig");
 const Request = request_mod.Request;
 
 pub const RequestBatch = struct {
+    alloc: std.mem.Allocator,
     items: std.ArrayList(Request),
 
     pub fn init(allocator: std.mem.Allocator) RequestBatch {
-        return .{ .items = std.ArrayList(Request).init(allocator) };
+        return .{ .alloc = allocator, .items = std.ArrayList(Request){} };
     }
 
     pub fn deinit(self: *RequestBatch) void {
-        self.items.deinit();
+        self.items.deinit(self.alloc);
     }
 
     pub fn append(self: *RequestBatch, req: Request) !void {
-        try self.items.append(req);
+        try self.items.append(self.alloc, req);
     }
 
     pub fn len(self: *RequestBatch) usize {

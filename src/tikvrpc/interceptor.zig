@@ -12,8 +12,8 @@ pub const SendCtxFn = fn (ctx: *anyopaque, target: []const u8, req: *Request) an
 // Interceptor with explicit before/after hooks. The onion model is implemented by Chain.aroundCtx
 // which invokes all before hooks in registration order and after hooks in reverse order.
 pub const Interceptor = struct {
-    beforeSend: fn (self: *const Interceptor, target: []const u8, req: *Request) void = defaultBefore,
-    afterRecv: fn (self: *const Interceptor, target: []const u8, req: *const Request, result: *const CallResult) void = defaultAfter,
+    beforeSend: *const fn (self: *const Interceptor, target: []const u8, req: *Request) void = defaultBefore,
+    afterRecv: *const fn (self: *const Interceptor, target: []const u8, req: *const Request, result: *const CallResult) void = defaultAfter,
 
     pub fn defaultBefore(_: *const Interceptor, _: []const u8, _: *Request) void {}
     pub fn defaultAfter(_: *const Interceptor, _: []const u8, _: *const Request, _: *const CallResult) void {}
@@ -26,13 +26,13 @@ pub const Chain = struct {
     list: std.ArrayList(*const Interceptor),
 
     pub fn init(alloc: std.mem.Allocator) Chain {
-        return .{ .alloc = alloc, .list = std.ArrayList(*const Interceptor).init(alloc) };
+        return .{ .alloc = alloc, .list = std.ArrayList(*const Interceptor){} };
     }
     pub fn deinit(self: *Chain) void {
-        self.list.deinit();
+        self.list.deinit(self.alloc);
     }
     pub fn link(self: *Chain, ic: *const Interceptor) *Chain {
-        self.list.append(ic) catch {};
+        self.list.append(self.alloc, ic) catch {};
         return self;
     }
 

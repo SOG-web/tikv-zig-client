@@ -8605,14 +8605,7 @@ pub const CompactError = struct {
         err_physical_table_not_exist: CompactErrorPhysicalTableNotExist,
         err_compact_in_progress: CompactErrorCompactInProgress,
         err_too_many_pending_tasks: CompactErrorTooManyPendingTasks,
-        const _DescTable_error_union = struct {
-            err_invalid_start_key: @TypeOf(fd(1, .submessage)),
-            err_physical_table_not_exist: @TypeOf(fd(2, .submessage)),
-            err_compact_in_progress: @TypeOf(fd(3, .submessage)),
-            err_too_many_pending_tasks: @TypeOf(fd(4, .submessage)),
-        };
-
-        pub const _desc_table: _DescTable_error_union = .{
+        pub const _desc_table = .{
             .err_invalid_start_key = fd(1, .submessage),
             .err_physical_table_not_exist = fd(2, .submessage),
             .err_compact_in_progress = fd(3, .submessage),
@@ -8620,11 +8613,7 @@ pub const CompactError = struct {
         };
     };
 
-    const _DescTable_CompactError = struct {
-        @"error": @TypeOf(fd(null, .{ .oneof = error_union })),
-    };
-
-    pub const _desc_table: _DescTable_CompactError = .{
+    pub const _desc_table = .{
         .@"error" = fd(null, .{ .oneof = error_union }),
     };
 

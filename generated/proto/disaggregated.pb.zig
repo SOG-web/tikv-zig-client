@@ -21,23 +21,14 @@ pub const S3LockResult = struct {
         success: Success,
         not_owner: NotOwner,
         conflict: Conflict,
-        const _DescTable_error_union = struct {
-            success: @TypeOf(fd(1, .submessage)),
-            not_owner: @TypeOf(fd(2, .submessage)),
-            conflict: @TypeOf(fd(3, .submessage)),
-        };
-
-        pub const _desc_table: _DescTable_error_union = .{
+        pub const _desc_table = .{
             .success = fd(1, .submessage),
             .not_owner = fd(2, .submessage),
             .conflict = fd(3, .submessage),
         };
     };
-    const _DescTable_S3LockResult = struct {
-        @"error": @TypeOf(fd(null, .{ .oneof = error_union })),
-    };
 
-    pub const _desc_table: _DescTable_S3LockResult = .{
+    pub const _desc_table = .{
         .@"error" = fd(null, .{ .oneof = error_union }),
     };
 
