@@ -2,6 +2,8 @@
 const std = @import("std");
 const root = @import("root");
 const utils = @import("../util/mod.zig");
+const kvproto = @import("kvproto");
+const kvrpcpb = kvproto.kvrpcpb;
 
 // ---------------- Variables (from variables.go) ----------------
 
@@ -65,8 +67,9 @@ pub const ReturnedValue = struct {
     already_locked: bool = false,
 };
 
-pub const PessimisticLockRequest = opaque {};
-pub const ErrDeadlock = opaque {};
+// Align with kvproto types now that proto is available in Zig
+pub const PessimisticLockRequest = kvrpcpb.PessimisticLockRequest;
+pub const ErrDeadlock = kvrpcpb.Deadlock;
 
 pub const LockCtx = struct {
     // allocator for owning internal buffers (keys/values in map)
@@ -102,10 +105,29 @@ pub const LockCtx = struct {
         };
     }
 
+    /// Create a LockCtx with default wait (LockAlwaysWait) and wait_start_time set to now.
+    pub fn initDefault(allocator: std.mem.Allocator, for_update_ts: u64) LockCtx {
+        var ctx = LockCtx.init(allocator, for_update_ts, LockAlwaysWait, 0);
+        ctx.setWaitStartNow();
+        return ctx;
+    }
+
     pub fn lockWaitTime(self: *LockCtx) i64 {
         if (self.lock_wait_time_ms) |v| return v;
         self.lock_wait_time_ms = @as(i64, std.math.maxInt(i64)); // LockAlwaysWait
         return self.lock_wait_time_ms.?;
+    }
+
+    /// Explicitly set lock wait time in milliseconds. Use LockAlwaysWait or LockNoWait for special semantics.
+    pub fn setLockWait(self: *LockCtx, ms: i64) void {
+        self.lock_wait_time_ms = ms;
+    }
+
+    /// Set the WaitStartTime to now (milliseconds since Unix epoch).
+    pub fn setWaitStartNow(self: *LockCtx) void {
+        const ns = std.time.nanoTimestamp();
+        const ms: i64 = @as(i64, @intCast(ns / std.time.ns_per_ms));
+        self.wait_start_time_ms = ms;
     }
 
     pub fn initReturnValues(self: *LockCtx, capacity: usize) !void {
@@ -184,6 +206,23 @@ pub const LockCtx = struct {
             m.deinit();
             self.values = null;
         }
+    }
+
+    /// Apply a resource group tag to the given PessimisticLockRequest using either the tagger or the pre-set tag.
+    /// Mirrors Go's special-case handling for LockCtx: if a tagger is set, we ignore ResourceGroupTag and use the tagger's output.
+    pub fn setResourceGroupTagFromTagger(self: *LockCtx, req: *PessimisticLockRequest) void {
+        var tag: []u8 = self.resource_group_tag;
+        if (self.resource_group_tagger) |f| {
+            tag = f(req);
+        }
+        if (tag.len == 0) return;
+        if (req.context == null) req.context = .{};
+        req.context.?.resource_group_tag = tag;
+    }
+
+    /// Invoke the on_deadlock callback if present.
+    pub fn onDeadlockCall(self: *LockCtx, err: *ErrDeadlock) void {
+        if (self.on_deadlock) |cb| cb(err);
     }
 };
 

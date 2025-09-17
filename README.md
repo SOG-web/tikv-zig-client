@@ -1,4 +1,6 @@
-# !!!!This library is not ready for use, it still in development. No build or Test are currently passing
+# Status: Early Development
+
+This library is under active development. Some components compile and tests are being brought up incrementally. Expect breaking changes.
 
 # TiKV Client for Zig
 
@@ -20,7 +22,7 @@ A Zig client library for TiKV, the distributed transactional key-value database.
 ## Setup
 
 ### Quick Setup
-For most users, the generated protobuf bindings are already included. Simply:
+This project now uses a Zig-native protobuf pipeline (no C/UPB). Generated files live under `src/proto/`. To build and run tests:
 
 ```bash
 git clone <this-repo>
@@ -28,14 +30,17 @@ cd client-zig
 zig build test
 ```
 
-### Full Setup (Regenerating Protobuf Bindings)
-If you need to regenerate kvproto bindings or set up from scratch:
+### Regenerate Protobuf Bindings (optional)
+If you need to regenerate kvproto bindings from `third_party/_kvproto_src/`:
 
 ```bash
-# Install dependencies
-brew install protobuf bazel git  # macOS
+# Install protoc and git (macOS example)
+brew install protobuf git
 
-# See KVPROTO_SETUP.md for complete setup instructions
+# Generate Zig protobuf files
+zig build gen-proto
+
+# See KVPROTO_SETUP.md for complete details
 ```
 
 **📖 For detailed setup instructions, see [KVPROTO_SETUP.md](KVPROTO_SETUP.md)**
@@ -86,9 +91,8 @@ pub fn main() !void {
 
 This client uses:
 - **kvproto** (release-7.1) for TiKV protocol definitions
-- **UPB (μpb)** for high-performance protobuf serialization
-- **Zig's @cImport** for seamless C interop
-- **Arena-based memory management** for efficient allocation
+- **zig-protobuf** for Zig-native protobuf code generation
+- **Zig 0.15.1** standard library and allocators
 
 ## Testing
 
@@ -96,9 +100,8 @@ This client uses:
 # Run all tests
 zig build test
 
-# Test kvproto bindings specifically
-zig test src/kvproto/header_sanity_test.zig
-zig test src/kvproto/roundtrip_test.zig
+# Run module test aggregates
+zig build test
 ```
 
 ## Documentation

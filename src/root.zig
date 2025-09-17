@@ -2,15 +2,12 @@
 const std = @import("std");
 pub const util = @import("util/mod.zig");
 pub const examples = @import("examples/mod.zig");
-pub const kvproto_header_sanity = @import("kvproto/header_sanity_test.zig");
-pub const kvproto_roundtrip = @import("kvproto/roundtrip_test.zig");
 pub const kv = @import("kv/mod.zig");
 pub const metrics = @import("metrics/mod.zig");
 pub const oracle = @import("oracle/mod.zig");
 pub const config = @import("config/mod.zig");
 pub const errorM = @import("error/mod.zig");
 pub const pd = @import("pd/mod.zig");
-pub const c = @import("c.zig");
 // pub const tikvrpc = @import("tikvrpc/mod.zig");
 
 pub fn bufferedPrint() !void {
@@ -40,10 +37,7 @@ test "aggregate modules" {
     _ = kv;
     _ = metrics;
     _ = errorM;
-    _ = kvproto_header_sanity;
-    _ = kvproto_roundtrip;
     _ = oracle;
     _ = pd;
     //  _ = tikvrpc;
-    _ = c;
 }

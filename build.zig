@@ -110,6 +110,8 @@ pub fn build(b: *std.Build) !void {
             .{ .name = "logz", .module = logz.module("logz") },
             .{ .name = "metrics", .module = metrics.module("metrics") },
             .{ .name = "toml", .module = toml.module("toml") },
+            // Generated protobuf bindings depend on the external protobuf module
+            .{ .name = "protobuf", .module = protobuf_dep.module("protobuf") },
             // .{ .name = "grpc_zig", .module = grpc_zig.module("grpc_zig") },
         },
     });
@@ -207,7 +209,7 @@ pub fn build(b: *std.Build) !void {
     try collectProtoFiles(b, kvproto_include_dir, &proto_list_inc);
 
     const protoc_step_main = protobuf.RunProtocStep.create(b, protobuf_dep.builder, target, .{
-        .destination_directory = b.path("src/proto"),
+        .destination_directory = b.path("generated/proto"),
         .source_files = proto_list_main.items,
         .include_directories = &.{
             kvproto_proto_dir,
@@ -217,7 +219,7 @@ pub fn build(b: *std.Build) !void {
 
     // Second protoc step: generate kvproto/include -> src/proto/include (for organization/tracking)
     const protoc_step_inc = protobuf.RunProtocStep.create(b, protobuf_dep.builder, target, .{
-        .destination_directory = b.path("src/proto/include"),
+        .destination_directory = b.path("generated/proto/include"),
         .source_files = proto_list_inc.items,
         .include_directories = &.{
             kvproto_proto_dir,
@@ -227,6 +229,28 @@ pub fn build(b: *std.Build) !void {
 
     gen_proto.dependOn(&protoc_step_main.step);
     gen_proto.dependOn(&protoc_step_inc.step);
+    
+    // Expose generated/proto directory as a Zig module named "kvproto"
+    const kvproto_module = b.createModule(.{
+        .root_source_file = b.path("generated/proto/mod.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    kvproto_module.addImport("protobuf", protobuf_dep.module("protobuf"));
+
+    // Make sure anything that needs the generated files can import "kvproto"
+    mod.addImport("kvproto", kvproto_module);
+    exe.root_module.addImport("kvproto", kvproto_module);
+    
+    // Make gen-proto opt-in. By default, do NOT regenerate during normal builds/tests.
+    // Use: zig build gen-proto  or  zig build test -Dgen-proto=true
+    const opt_run_gen_proto = b.option(bool, "gen-proto", "Run protoc to (re)generate kvproto bindings before build") orelse false;
+    if (opt_run_gen_proto) {
+        exe.step.dependOn(gen_proto);
+        run_cmd.step.dependOn(gen_proto);
+        mod_tests.step.dependOn(gen_proto);
+        exe_tests.step.dependOn(gen_proto);
+    }
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
