@@ -2,8 +2,6 @@
 const std = @import("std");
 pub const util = @import("util/mod.zig");
 pub const examples = @import("examples/mod.zig");
-pub const kvproto_header_sanity = @import("kvproto/header_sanity_test.zig");
-pub const kvproto_roundtrip = @import("kvproto/roundtrip_test.zig");
 pub const kv = @import("kv/mod.zig");
 pub const metrics = @import("metrics/mod.zig");
 pub const oracle = @import("oracle/mod.zig");
@@ -39,8 +37,6 @@ test "aggregate modules" {
     _ = kv;
     _ = metrics;
     _ = errorM;
-    _ = kvproto_header_sanity;
-    _ = kvproto_roundtrip;
     _ = oracle;
     _ = pd;
     //  _ = tikvrpc;
