@@ -5,6 +5,10 @@ const misc = @import("./misc.zig");
 // Ported from client-go/util/execdetails.go with simplified ownership semantics.
 // Durations use nanoseconds (i64) for consistency with std.time; helpers format human-readable strings.
 
+pub const commitDetailCtxKeyType = struct {};
+pub const lockKeysDetailCtxKeyType = struct {};
+pub const execDetailsCtxKeyType = struct {};
+
 pub const ExecDetails = struct {
     backoff_count: i64 = 0,
     backoff_duration_ns: i64 = 0,
@@ -96,7 +100,8 @@ pub const ScanDetail = struct {
         {
             return allocator.alloc(u8, 0);
         }
-        return try std.fmt.allocPrint(allocator,
+        return try std.fmt.allocPrint(
+            allocator,
             "scan_detail: {total_process_keys: {d}, total_process_keys_size: {d}, total_keys: {d}, rocksdb: {delete_skipped_count: {d}, key_skipped_count: {d}, block: {cache_hit_count: {d}, read_count: {d}, read_byte: {s}}}}",
             .{
                 self.processed_keys,

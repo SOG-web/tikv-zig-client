@@ -1,29 +1,17 @@
 // PD client common types
 const std = @import("std");
+const metapb = @import("kvproto").metapb;
+const pdpb = @import("kvproto").pdpb;
+const kvrpcpb = @import("kvproto").kvrpcpb;
 
-pub const KeyRange = struct {
-    start_key: []const u8,
-    end_key: []const u8,
-};
+pub const KeyRange = kvrpcpb.KeyRange;
 
-/// Minimal Store info used by the client
-pub const Store = struct {
-    id: u64,
-    address: []const u8,
-};
+pub const Store = metapb.Store;
 
-/// Minimal Region info used by the client
-pub const Region = struct {
-    id: u64,
-    start_key: []const u8,
-    end_key: []const u8,
-};
+pub const Region = metapb.Region;
 
 /// Timestamp result returned by PD TSO
-pub const TSOResult = struct {
-    physical: i64,
-    logical: i64,
-};
+pub const TSOResult = pdpb.Timestamp;
 
 pub const Error = error{
     Unimplemented,

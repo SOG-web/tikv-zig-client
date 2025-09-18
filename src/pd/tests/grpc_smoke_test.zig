@@ -50,7 +50,7 @@ test "pd grpc smoke: GetMembers" {
 
     // Call PD.GetMembers
     const resp_bytes = client.call("/pdpb.PD/GetMembers", req_bytes, .gzip, 5000) catch |err| {
-        std.debug.print("PD gRPC call failed: {}\n", .{err});
+        std.debug.print("PD gRPC call failed: {any}\n", .{err});
         return;
     };
 

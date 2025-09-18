@@ -19,3 +19,4 @@ pub const coprocessor = @import("coprocessor.pb.zig");
 pub const mpp = @import("mpp.pb.zig");
 pub const debugpb = @import("debugpb.pb.zig");
 pub const tikvpb = @import("tikvpb.pb.zig");
+pub const tsopb = @import("tsopb.pb.zig");

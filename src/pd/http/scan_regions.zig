@@ -11,9 +11,7 @@ const Uri = util.Uri;
 const Error = types.Error;
 const Region = types.Region;
 
-pub fn scanRegions(ctx: *const tctx.TransportCtx, http_client: *std.http.Client, start_key: []const u8, end_key: []const u8, limit: usize, need_buckets: bool) Error![]Region {
-    _ = need_buckets; // HTTP does not provide buckets
-
+pub fn scanRegions(ctx: *const tctx.TransportCtx, http_client: *std.http.Client, start_key: []const u8, end_key: []const u8, limit: usize) Error![]Region {
     if (ctx.endpoints.len == 0) return Error.InvalidArgument;
 
     const max_retries: usize = 5;

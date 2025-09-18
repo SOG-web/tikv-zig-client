@@ -72,7 +72,7 @@ pub fn build_pd_oracle(
     use_https: bool,
     refresh_ms: u64,
 ) !PDOracleBundle {
-    var client = try pd.PDClientFactory.grpc_with_transport_options(allocator, endpoints, prefer_grpc, use_https);
+    var client = try pd.PDClientFactory.grpc_with_transport_options(allocator, endpoints, prefer_grpc, use_https, .{});
     errdefer client.close();
 
     var pd_oracle = try oracles_mod.PdOracle.init(allocator, client, refresh_ms);

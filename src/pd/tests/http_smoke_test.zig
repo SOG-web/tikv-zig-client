@@ -76,7 +76,11 @@ test "pd http smoke: getAllStores, getRegion, getRegionByID, scanRegions" {
     }
 
     // scanRegions over a small range
-    const regs = try client.scanRegions("", "\xff", 8, false);
+    const regs = try client.scanRegions(
+        "",
+        "\xff",
+        8,
+    );
     defer freeRegions(gpa, regs);
     std.debug.print("scanRegions returned {d} regions\n", .{regs.len});
 

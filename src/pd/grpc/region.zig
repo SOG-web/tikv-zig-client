@@ -1,28 +1,52 @@
-// PD gRPC implementation for GetRegion (scaffold)
-// TODO: Wire gRPC-zig stubs for pdpb.PD.GetRegion and return real data.
-
+// PD gRPC implementation for GetRegion
 const std = @import("std");
 const types = @import("../types.zig");
 const client_mod = @import("../grpc_client.zig");
 const codec_bytes = @import("../../util/codec/bytes.zig");
+const pdpb = @import("kvproto").pdpb;
 
 const Error = types.Error;
 const Region = types.Region;
 
-// For now this is a scaffold that prepares inputs (memcomparable key),
-// and will return Unimplemented until gRPC stubs are integrated.
 pub fn getRegion(self: *client_mod.GrpcPDClient, key: []const u8, need_buckets: bool) Error!Region {
-    _ = need_buckets; // carried for parity with Go; not used yet
+    var client_wrapper = try self.getClient(null);
 
-    // Encode key using TiKV memcomparable format (Codec EncodeBytes)
-    const enc_key = try codec_bytes.encodeBytes(self.allocator, key);
+    // Encode key using TiKV memcomparable format
+    const enc_key = codec_bytes.encodeBytes(self.allocator, key) catch return Error.OutOfMemory;
     defer self.allocator.free(enc_key);
 
-    // TODO: use gRPC-zig:
-    //  - Dial one of self.endpoints with TLS options
-    //  - Build pdpb.GetRegionRequest{ Header, RegionKey = enc_key, NeedBuckets = need_buckets }
-    //  - Call PD.GetRegion and parse pdpb.GetRegionResponse
-    //  - Map response.Region to Region{ id, start_key, end_key } (bytes will be raw mem)
+    // Get cluster info for proper headers
+    const cluster_info = try self.getClusterInfo();
 
-    return Error.Unimplemented;
+    // Build GetRegion request
+    var req = pdpb.GetRegionRequest{
+        .header = pdpb.RequestHeader{
+            .cluster_id = cluster_info.cluster_id,
+            .sender_id = cluster_info.sender_id,
+        },
+        .region_key = enc_key,
+        .need_buckets = need_buckets,
+    };
+
+    // Encode request
+    var aw: std.Io.Writer.Allocating = std.Io.Writer.Allocating.init(self.allocator);
+    defer aw.deinit();
+    req.encode(&aw.writer, self.allocator) catch return Error.RpcError;
+    const req_bytes = aw.written();
+
+    // Call PD.GetRegion
+    const resp_bytes = client_wrapper.call("/pdpb.PD/GetRegion", req_bytes, .gzip, 5000) catch return Error.RpcError;
+    defer self.allocator.free(resp_bytes);
+
+    // Decode response
+    var reader = std.Io.Reader.fixed(resp_bytes);
+    var resp = pdpb.GetRegionResponse.decode(&reader, self.allocator) catch return Error.RpcError;
+    defer resp.deinit(self.allocator);
+
+    // Extract region
+    if (resp.region) |region| {
+        return region;
+    } else {
+        return Error.NotFound;
+    }
 }

@@ -15,7 +15,7 @@ pub const TSOResult = types.TSOResult;
 
 /// PDClient is a thin interface over PD operations used by TiKV client
 pub const PDClient = struct {
-    ptr: *anyopaque,
+    ptr: *grpc_impl.GrpcPDClient,
     vtable: *const VTable,
 
     pub const VTable = struct {
@@ -27,7 +27,7 @@ pub const PDClient = struct {
         getRegion: *const fn (ptr: *anyopaque, key: []const u8, need_buckets: bool) Error!Region,
         getPrevRegion: *const fn (ptr: *anyopaque, key: []const u8, need_buckets: bool) Error!Region,
         getRegionByID: *const fn (ptr: *anyopaque, region_id: u64, need_buckets: bool) Error!Region,
-        scanRegions: *const fn (ptr: *anyopaque, start_key: []const u8, end_key: []const u8, limit: usize, need_buckets: bool) Error![]Region,
+        scanRegions: *const fn (ptr: *anyopaque, start_key: []const u8, end_key: []const u8, limit: usize) Error![]Region,
 
         // Store APIs
         getStore: *const fn (ptr: *anyopaque, store_id: u64) Error!Store,
@@ -57,8 +57,8 @@ pub const PDClient = struct {
         return self.vtable.getRegionByID(self.ptr, region_id, need_buckets);
     }
 
-    pub fn scanRegions(self: PDClient, start_key: []const u8, end_key: []const u8, limit: usize, need_buckets: bool) Error![]Region {
-        return self.vtable.scanRegions(self.ptr, start_key, end_key, limit, need_buckets);
+    pub fn scanRegions(self: PDClient, start_key: []const u8, end_key: []const u8, limit: usize) Error![]Region {
+        return self.vtable.scanRegions(self.ptr, start_key, end_key, limit);
     }
 
     pub fn getStore(self: PDClient, store_id: u64) Error!Store {
@@ -96,8 +96,8 @@ pub const PDClientFactory = struct {
     }
 
     /// Create a PD client with explicit transport preference
-    pub fn grpc_with_options(allocator: std.mem.Allocator, endpoints: []const []const u8, prefer_grpc: bool) Error!PDClient {
-        const impl = try grpc_impl.GrpcPDClient.init(allocator, endpoints);
+    pub fn grpc_with_options(allocator: std.mem.Allocator, endpoints: []const []const u8, prefer_grpc: bool, grpc_config: grpc_impl.GrpcConfig) Error!PDClient {
+        const impl = try grpc_impl.GrpcPDClient.initWithConfig(allocator, endpoints, grpc_config);
         impl.prefer_grpc = prefer_grpc;
         return PDClient{
             .ptr = impl,
@@ -121,8 +121,9 @@ pub const PDClientFactory = struct {
         endpoints: []const []const u8,
         prefer_grpc: bool,
         use_https: bool,
+        grpc_config: grpc_impl.GrpcConfig,
     ) Error!PDClient {
-        const impl = try grpc_impl.GrpcPDClient.init(allocator, endpoints);
+        const impl = try grpc_impl.GrpcPDClient.initWithConfig(allocator, endpoints, grpc_config);
         impl.prefer_grpc = prefer_grpc;
         impl.use_https = use_https;
         return PDClient{

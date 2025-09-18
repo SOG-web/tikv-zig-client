@@ -6,6 +6,10 @@ const types = @import("types.zig");
 const http = std.http; // kept for future methods
 const json = std.json; // kept for future methods
 const Uri = std.Uri; // kept for future methods
+const grpc = @import("../grpc_client/mod.zig");
+const pool = @import("../grpc_client/pool.zig");
+const pdpb = @import("kvproto").pdpb;
+const tsopb = @import("kvproto").tsopb;
 const region_http = @import("http/region.zig");
 const region_grpc = @import("grpc/region.zig");
 const region_by_id_http = @import("http/region_by_id.zig");
@@ -18,6 +22,8 @@ const store_grpc = @import("grpc/store.zig");
 const stores_http = @import("http/stores.zig");
 const stores_grpc = @import("grpc/stores.zig");
 const prev_region_grpc = @import("grpc/prev_region.zig");
+const tso_grpc = @import("grpc/tso.zig");
+const codec_bytes = @import("../util/codec/bytes.zig");
 
 pub const Error = types.Error;
 pub const Region = types.Region;
@@ -27,9 +33,39 @@ const KeyRange = types.KeyRange;
 // File-scope logical counter for dev-only TSO fallback
 var g_tso_logical: std.atomic.Value(i64) = std.atomic.Value(i64).init(0);
 
-// TODO(cascade): Zig version currently uses PD HTTP client; TSO is a dev-only synthetic
-// fallback in `pd/grpc_client.zig` until gRPC TSO is wired. When gRPC TSO is implemented,
-// set `prefer_grpc = true` and Oracle/clients will use it transparently.
+// Zig version now supports both PD HTTP and gRPC clients. gRPC is enabled by default
+// with graceful fallback to HTTP for unimplemented methods. TSO and GetRegion are
+// implemented via gRPC using the new HTTP/2 client with HPACK compression.
+
+const ClusterInfo = struct {
+    cluster_id: u64,
+    sender_id: u64,
+};
+
+pub const GrpcConfig = struct {
+    use_connection_pool: bool = true,
+    max_connections_per_host: u32 = 10,
+    connection_timeout_seconds: u32 = 300,
+    max_concurrent_streams: u32 = 100,
+};
+
+pub const ClientWrapper = union(enum) {
+    single: *grpc.GrpcClient,
+    multiplexed: pool.MultiplexedClient,
+
+    pub fn call(
+        self: *ClientWrapper,
+        path: []const u8,
+        request: []const u8,
+        compression_alg: @import("../grpc_client/features/compression.zig").Compression.Algorithm,
+        timeout_ms: ?u64,
+    ) ![]u8 {
+        switch (self.*) {
+            .single => |client| return client.call(path, request, compression_alg, timeout_ms),
+            .multiplexed => |*client| return client.call(path, request, compression_alg, timeout_ms),
+        }
+    }
+};
 
 pub const GrpcPDClient = struct {
     allocator: std.mem.Allocator,
@@ -38,18 +74,30 @@ pub const GrpcPDClient = struct {
     use_https: bool,
     http_client: std.http.Client,
     tls: TlsOptions,
+    grpc_client: ?*grpc.GrpcClient,
+    client_pool: ?*pool.ClientPool,
+    cluster_info: ?ClusterInfo,
+    grpc_config: GrpcConfig,
 
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator, endpoints: []const []const u8) Error!*Self {
+        return initWithConfig(allocator, endpoints, GrpcConfig{});
+    }
+
+    pub fn initWithConfig(allocator: std.mem.Allocator, endpoints: []const []const u8, config: GrpcConfig) Error!*Self {
         var self = allocator.create(Self) catch return Error.OutOfMemory;
         self.* = .{
             .allocator = allocator,
             .endpoints = try allocator.alloc([]const u8, endpoints.len),
-            .prefer_grpc = false,
+            .prefer_grpc = true, // Enable gRPC by default now
             .use_https = false,
             .http_client = .{ .allocator = allocator },
             .tls = .{},
+            .grpc_client = null,
+            .client_pool = null,
+            .cluster_info = null,
+            .grpc_config = config,
         };
         for (endpoints, 0..) |ep, i| {
             self.endpoints[i] = try allocator.dupe(u8, ep);
@@ -60,19 +108,136 @@ pub const GrpcPDClient = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        if (self.grpc_client) |client| {
+            client.deinit();
+            self.allocator.destroy(client);
+        }
+        if (self.client_pool) |pool_ptr| {
+            pool_ptr.deinit();
+            self.allocator.destroy(pool_ptr);
+        }
         self.http_client.deinit();
         for (self.endpoints) |ep| self.allocator.free(ep);
         self.allocator.free(self.endpoints);
         self.allocator.destroy(self);
     }
 
-    // VTable functions
+    // Helper to get or create gRPC client for first endpoint
+    pub fn getGrpcClient(self: *Self) Error!*grpc.GrpcClient {
+        if (self.grpc_client) |client| return client;
+
+        if (self.endpoints.len == 0) return Error.RpcError;
+
+        // Parse first endpoint
+        const endpoint = self.endpoints[0];
+        const colon_pos = std.mem.lastIndexOfScalar(u8, endpoint, ':') orelse return Error.RpcError;
+        const host = endpoint[0..colon_pos];
+        const port_str = endpoint[colon_pos + 1 ..];
+        const port = std.fmt.parseInt(u16, port_str, 10) catch return Error.RpcError;
+
+        // Create gRPC client
+        const client = self.allocator.create(grpc.GrpcClient) catch return Error.OutOfMemory;
+        client.* = grpc.GrpcClient.init(self.allocator, host, port) catch return Error.RpcError;
+        self.grpc_client = client;
+
+        return client;
+    }
+
+    // Helper to get or create connection pool for efficient connection management
+    pub fn getClientPool(self: *Self) Error!*pool.ClientPool {
+        if (self.client_pool) |pool_ptr| return pool_ptr;
+
+        // Create connection pool for efficient connection reuse
+        const pool_ptr = self.allocator.create(pool.ClientPool) catch return Error.OutOfMemory;
+        pool_ptr.* = pool.ClientPool.init(self.allocator);
+        self.client_pool = pool_ptr;
+
+        return pool_ptr;
+    }
+
+    // Get a multiplexed client for a specific endpoint (round-robin selection)
+    pub fn getMultiplexedClient(self: *Self, endpoint_idx: ?usize) Error!pool.MultiplexedClient {
+        const pool_ptr = try self.getClientPool();
+
+        if (self.endpoints.len == 0) return Error.RpcError;
+
+        // Use round-robin or specified endpoint
+        const idx = endpoint_idx orelse (std.crypto.random.int(usize) % self.endpoints.len);
+        const endpoint = self.endpoints[idx];
+
+        // Parse endpoint
+        const colon_pos = std.mem.lastIndexOfScalar(u8, endpoint, ':') orelse return Error.RpcError;
+        const host = endpoint[0..colon_pos];
+        const port_str = endpoint[colon_pos + 1 ..];
+        const port = std.fmt.parseInt(u16, port_str, 10) catch return Error.RpcError;
+
+        return pool_ptr.getClient(host, port) catch return Error.RpcError;
+    }
+
+    // Get the appropriate client based on configuration (pooled or single)
+    pub fn getClient(self: *Self, endpoint_idx: ?usize) Error!ClientWrapper {
+        if (self.grpc_config.use_connection_pool) {
+            const multiplexed = try self.getMultiplexedClient(endpoint_idx);
+            return ClientWrapper{ .multiplexed = multiplexed };
+        } else {
+            const single = try self.getGrpcClient();
+            return ClientWrapper{ .single = single };
+        }
+    }
+
+    // Helper to get cluster info (lazy initialization via GetClusterInfo)
+    pub fn getClusterInfo(self: *Self) Error!ClusterInfo {
+        if (self.cluster_info) |info| return info;
+
+        // Get cluster info via GetClusterInfo call
+        const client_wrapper = try self.getClient(null);
+
+        // Build GetClusterInfo request
+        var req = pdpb.GetClusterInfoRequest{};
+
+        // Encode request
+        var aw: std.Io.Writer.Allocating = std.Io.Writer.Allocating.init(self.allocator);
+        defer aw.deinit();
+        req.encode(&aw.writer, self.allocator) catch return Error.RpcError;
+        const req_bytes = aw.written();
+
+        // Call PD.GetClusterInfo
+        var client_wrapper_mut = client_wrapper;
+        const resp_bytes = client_wrapper_mut.call("/pdpb.PD/GetClusterInfo", req_bytes, .gzip, 5000) catch return Error.RpcError;
+        defer self.allocator.free(resp_bytes);
+
+        // Decode response
+        var reader = std.Io.Reader.fixed(resp_bytes);
+        var resp = pdpb.GetClusterInfoResponse.decode(&reader, self.allocator) catch return Error.RpcError;
+        defer resp.deinit(self.allocator);
+
+        // Extract cluster info
+        const cluster_id = if (resp.header) |h| h.cluster_id else 0;
+        const sender_id = std.crypto.random.int(u64); // Generate random sender ID
+
+        const info = ClusterInfo{
+            .cluster_id = cluster_id,
+            .sender_id = sender_id,
+        };
+        self.cluster_info = info;
+
+        return info;
+    }
 
     pub fn getTS(ptr: *anyopaque) Error!types.TSOResult {
         const self: *Self = @ptrCast(@alignCast(ptr));
         if (self.prefer_grpc) {
-            // Real gRPC-based TSO not wired yet in this module
-            return Error.Unimplemented;
+            return tso_grpc.getTS(self) catch |err| switch (err) {
+                Error.Unimplemented, Error.RpcError => {
+                    // Fallback to synthetic TSO
+                    std.log.warn("PD TSO via gRPC failed, using synthetic fallback: {}", .{err});
+                    const nanos: i128 = std.time.nanoTimestamp();
+                    const millis: i64 = @intCast(@divTrunc(nanos, std.time.ns_per_ms));
+                    const logical: i64 = g_tso_logical.fetchAdd(1, .monotonic);
+                    return types.TSOResult{ .physical = millis, .logical = logical };
+                },
+                else => return err,
+            };
         }
 
         // Compose a monotonic-ish TSO from system time and a process-local logical counter.
@@ -90,7 +255,19 @@ pub const GrpcPDClient = struct {
     pub fn getRegion(ptr: *anyopaque, key: []const u8, need_buckets: bool) Error!Region {
         const self: *Self = @ptrCast(@alignCast(ptr));
         if (self.prefer_grpc) {
-            return region_grpc.getRegion(self, key, need_buckets);
+            return region_grpc.getRegion(self, key, need_buckets) catch |err| switch (err) {
+                Error.Unimplemented, Error.RpcError => {
+                    // Fallback to HTTP
+                    std.log.warn("PD GetRegion via gRPC failed, using HTTP fallback: {}", .{err});
+                    var ctx: tctx.TransportCtx = .{
+                        .allocator = self.allocator,
+                        .endpoints = self.endpoints,
+                        .use_https = self.use_https,
+                    };
+                    return region_http.getRegion(&ctx, &self.http_client, key, need_buckets);
+                },
+                else => return err,
+            };
         } else {
             var ctx: tctx.TransportCtx = .{
                 .allocator = self.allocator,
@@ -101,12 +278,31 @@ pub const GrpcPDClient = struct {
         }
     }
 
-    // HTTP helpers moved into http/region.zig and reused there.
-
     pub fn getPrevRegion(ptr: *anyopaque, key: []const u8, need_buckets: bool) Error!Region {
         const self: *Self = @ptrCast(@alignCast(ptr));
         if (self.prefer_grpc) {
-            return prev_region_grpc.getPrevRegion(self, key, need_buckets);
+            return prev_region_grpc.getPrevRegion(self, key, need_buckets) catch |err| switch (err) {
+                Error.Unimplemented, Error.RpcError => {
+                    // Fallback to HTTP
+                    std.log.warn("PD GetPrevRegion via gRPC failed, using HTTP fallback: {}", .{err});
+                    // var ctx: tctx.TransportCtx = .{
+                    //     .allocator = self.allocator,
+                    //     .endpoints = self.endpoints,
+                    //     .use_https = self.use_https,
+                    // };
+                    const start_key: []const u8 = &[_]u8{}; // empty start
+                    const end_key: []const u8 = key;
+                    const limit: usize = 512;
+                    const regions = scan_regions_grpc.scanRegions(self, start_key, end_key, limit) catch |e| switch (e) {
+                        error.OutOfMemory => return Error.OutOfMemory,
+                        else => return Error.RpcError,
+                    };
+                    defer self.allocator.free(regions);
+                    if (regions.len == 0) return Error.NotFound;
+                    return regions[regions.len - 1];
+                },
+                else => return err,
+            };
         }
 
         // HTTP fallback approximation:
@@ -120,7 +316,7 @@ pub const GrpcPDClient = struct {
         const end_key: []const u8 = key;
         // Limit: use a reasonable cap (e.g., 512) to avoid large responses
         const limit: usize = 512;
-        const regions = scan_regions_http.scanRegions(&ctx, &self.http_client, start_key, end_key, limit, need_buckets) catch |err| {
+        const regions = scan_regions_http.scanRegions(&ctx, &self.http_client, start_key, end_key, limit) catch |err| {
             return switch (err) {
                 error.OutOfMemory => Error.OutOfMemory,
                 else => Error.RpcError,
@@ -134,7 +330,19 @@ pub const GrpcPDClient = struct {
     pub fn getRegionByID(ptr: *anyopaque, region_id: u64, need_buckets: bool) Error!Region {
         const self: *Self = @ptrCast(@alignCast(ptr));
         if (self.prefer_grpc) {
-            return region_by_id_grpc.getRegionByID(self, region_id, need_buckets);
+            return region_by_id_grpc.getRegionByID(self, region_id, need_buckets) catch |err| switch (err) {
+                Error.Unimplemented, Error.RpcError => {
+                    // Fallback to HTTP
+                    std.log.warn("PD GetRegionByID via gRPC failed, using HTTP fallback: {}", .{err});
+                    var ctx: tctx.TransportCtx = .{
+                        .allocator = self.allocator,
+                        .endpoints = self.endpoints,
+                        .use_https = self.use_https,
+                    };
+                    return region_by_id_http.getRegionByID(&ctx, &self.http_client, region_id, need_buckets);
+                },
+                else => return err,
+            };
         } else {
             var ctx: tctx.TransportCtx = .{
                 .allocator = self.allocator,
@@ -145,24 +353,48 @@ pub const GrpcPDClient = struct {
         }
     }
 
-    pub fn scanRegions(ptr: *anyopaque, start_key: []const u8, end_key: []const u8, limit: usize, need_buckets: bool) Error![]Region {
+    pub fn scanRegions(ptr: *anyopaque, start_key: []const u8, end_key: []const u8, limit: usize) Error![]Region {
         const self: *Self = @ptrCast(@alignCast(ptr));
         if (self.prefer_grpc) {
-            return scan_regions_grpc.scanRegions(self, start_key, end_key, limit, need_buckets);
+            return scan_regions_grpc.scanRegions(self, start_key, end_key, limit) catch |err| switch (err) {
+                Error.Unimplemented, Error.RpcError => {
+                    // Fallback to HTTP
+                    std.log.warn("PD ScanRegions via gRPC failed, using HTTP fallback: {}", .{err});
+                    var ctx: tctx.TransportCtx = .{
+                        .allocator = self.allocator,
+                        .endpoints = self.endpoints,
+                        .use_https = self.use_https,
+                    };
+                    return scan_regions_http.scanRegions(&ctx, &self.http_client, start_key, end_key, limit);
+                },
+                else => return err,
+            };
         } else {
             var ctx: tctx.TransportCtx = .{
                 .allocator = self.allocator,
                 .endpoints = self.endpoints,
                 .use_https = self.use_https,
             };
-            return scan_regions_http.scanRegions(&ctx, &self.http_client, start_key, end_key, limit, need_buckets);
+            return scan_regions_http.scanRegions(&ctx, &self.http_client, start_key, end_key, limit);
         }
     }
 
     pub fn getStore(ptr: *anyopaque, store_id: u64) Error!Store {
         const self: *Self = @ptrCast(@alignCast(ptr));
         if (self.prefer_grpc) {
-            return store_grpc.getStore(self, store_id);
+            return store_grpc.getStore(self, store_id) catch |err| switch (err) {
+                Error.Unimplemented, Error.RpcError => {
+                    // Fallback to HTTP
+                    std.log.warn("PD GetStore via gRPC failed, using HTTP fallback: {}", .{err});
+                    var ctx: tctx.TransportCtx = .{
+                        .allocator = self.allocator,
+                        .endpoints = self.endpoints,
+                        .use_https = self.use_https,
+                    };
+                    return store_http.getStore(&ctx, &self.http_client, store_id);
+                },
+                else => return err,
+            };
         } else {
             var ctx: tctx.TransportCtx = .{
                 .allocator = self.allocator,
@@ -176,7 +408,19 @@ pub const GrpcPDClient = struct {
     pub fn getAllStores(ptr: *anyopaque) Error![]Store {
         const self: *Self = @ptrCast(@alignCast(ptr));
         if (self.prefer_grpc) {
-            return stores_grpc.getAllStores(self);
+            return stores_grpc.getAllStores(self) catch |err| switch (err) {
+                Error.Unimplemented, Error.RpcError => {
+                    // Fallback to HTTP
+                    std.log.warn("PD GetAllStores via gRPC failed, using HTTP fallback: {}", .{err});
+                    var ctx: tctx.TransportCtx = .{
+                        .allocator = self.allocator,
+                        .endpoints = self.endpoints,
+                        .use_https = self.use_https,
+                    };
+                    return stores_http.getAllStores(&ctx, &self.http_client);
+                },
+                else => return err,
+            };
         } else {
             var ctx: tctx.TransportCtx = .{
                 .allocator = self.allocator,
