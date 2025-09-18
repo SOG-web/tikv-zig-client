@@ -89,6 +89,6 @@ test "Compression deflate (zlib-wrapped) round-trip text and binary" {
     defer std.testing.allocator.free(un2);
     try std.testing.expectEqualSlices(u8, bin, un2);
 
-    // std.debug.print("gzip: {} bytes\n", .{bin.len});
-    // std.debug.print("deflate: {} bytes\n", .{df2.len});
+    // // std.debug.print("gzip: {} bytes\n", .{bin.len});
+    // // std.debug.print("deflate: {} bytes\n", .{df2.len});
 }

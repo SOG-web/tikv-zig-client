@@ -45,7 +45,8 @@ pub fn getPrevRegion(self: *client_mod.GrpcPDClient, key: []const u8, need_bucke
 
     // Extract region
     if (resp.region) |region| {
-        return region;
+        const copy = region.dupe(self.allocator) catch return Error.OutOfMemory;
+        return copy;
     } else {
         return Error.NotFound;
     }

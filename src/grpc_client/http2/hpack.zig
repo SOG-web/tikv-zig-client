@@ -36,7 +36,7 @@ pub const Encoder = struct {
 
         var it = headers.iterator();
         while (it.next()) |entry| {
-            std.debug.print("Encoding header: {s}: {s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+            // std.debug.print("Encoding header: {s}: {s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
             try self.encodeField(&buffer, entry.key_ptr.*, entry.value_ptr.*);
         }
 
@@ -49,7 +49,7 @@ pub const Encoder = struct {
         errdefer buffer.deinit(self.allocator);
 
         for (pairs) |p| {
-            std.debug.print("Encoding header: {s}: {s}\n", .{ p.name, p.value });
+            // std.debug.print("Encoding header: {s}: {s}\n", .{ p.name, p.value });
             try self.encodeField(&buffer, p.name, p.value);
         }
 
@@ -58,7 +58,7 @@ pub const Encoder = struct {
 
     fn encodeField(self: *Encoder, buffer: *std.ArrayList(u8), name: []const u8, value: []const u8) !void {
         // Simple literal header field encoding
-        std.debug.print("Encoding header: {s}: {s}\n", .{ name, value });
+        // std.debug.print("Encoding header: {s}: {s}\n", .{ name, value });
         try buffer.append(self.allocator, 0x0); // New name
         try self.encodeString(buffer, name);
         try self.encodeString(buffer, value);

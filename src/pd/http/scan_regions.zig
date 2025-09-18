@@ -4,6 +4,7 @@ const types = @import("../types.zig");
 const tctx = @import("../transport_ctx.zig");
 const util = @import("util.zig");
 const api = @import("api.zig");
+const json_helpers = @import("json_helpers.zig");
 
 const http = util.http;
 const Uri = util.Uri;
@@ -81,26 +82,22 @@ pub fn scanRegions(ctx: *const tctx.TransportCtx, http_client: *std.http.Client,
             var out = std.ArrayList(Region){};
             errdefer {
                 // free any partially appended regions
-                for (out.items) |r| {
-                    ctx.allocator.free(r.start_key);
-                    ctx.allocator.free(r.end_key);
+                for (out.items) |*r| {
+                    r.deinit(ctx.allocator);
                 }
                 out.deinit(ctx.allocator);
             }
 
             for (arr.items) |item| {
                 const r_obj = item.object;
-                const id_val = r_obj.get("id") orelse continue;
-                const start_key_val = r_obj.get("start_key") orelse continue;
-                const end_key_val = r_obj.get("end_key") orelse continue;
 
-                const id_u64: u64 = @intCast(id_val.integer);
-                const sk_str = start_key_val.string;
-                const ek_str = end_key_val.string;
-                const sk = try ctx.allocator.dupe(u8, sk_str);
-                const ek = try ctx.allocator.dupe(u8, ek_str);
+                // Use helper to parse Region from JSON
+                const region = json_helpers.parseRegionFromJson(ctx.allocator, r_obj) catch |err| {
+                    if (err == error.OutOfMemory) return Error.OutOfMemory;
+                    continue; // skip malformed region
+                };
 
-                try out.append(ctx.allocator, .{ .id = id_u64, .start_key = sk, .end_key = ek });
+                try out.append(ctx.allocator, region);
                 if (out.items.len >= limit) break; // extra safety if PD returns more
             }
 

@@ -3,8 +3,8 @@ const pd = @import("../mod.zig");
 
 fn freeRegions(alloc: std.mem.Allocator, regs: []pd.Region) void {
     for (regs) |r| {
-        alloc.free(r.start_key);
-        alloc.free(r.end_key);
+        var rm = r; // make mutable copy to call deinit
+        rm.deinit(alloc);
     }
     alloc.free(regs);
 }
@@ -36,13 +36,16 @@ test "pd http smoke: getAllStores, getRegion, getRegionByID, scanRegions" {
     const endpoints: [][]const u8 = eps.items;
 
     // Prefer HTTP for now; user can flip prefer_grpc=true once gRPC-zig is wired.
-    var client = try pd.PDClientFactory.grpc_with_transport_options(gpa, endpoints, false, false);
+    var client = try pd.PDClientFactory.grpc_with_transport_options(gpa, endpoints, false, false, .{});
     defer client.close();
 
     // getAllStores
     const stores = try client.getAllStores();
     defer {
-        for (stores) |s| gpa.free(s.address);
+        for (stores) |s| {
+            var sm = s;
+            sm.deinit(gpa);
+        }
         gpa.free(stores);
     }
     std.debug.print("stores={d}\n", .{stores.len});
@@ -50,7 +53,10 @@ test "pd http smoke: getAllStores, getRegion, getRegionByID, scanRegions" {
     // getStore for the first store (if present)
     if (stores.len > 0) {
         const s1 = try client.getStore(stores[0].id);
-        defer gpa.free(s1.address);
+        defer {
+            var sm = s1;
+            sm.deinit(gpa);
+        }
         std.debug.print("store id={d} addr={s}\n", .{ s1.id, s1.address });
     }
 
@@ -59,16 +65,16 @@ test "pd http smoke: getAllStores, getRegion, getRegionByID, scanRegions" {
     const region_or_err = client.getRegion("", false);
     if (region_or_err) |r| {
         defer {
-            gpa.free(r.start_key);
-            gpa.free(r.end_key);
+            var rm = r;
+            rm.deinit(gpa);
         }
         std.debug.print("region id={d} start={s} end={s}\n", .{ r.id, r.start_key, r.end_key });
         have_region = true;
         // getRegionByID
         const r2 = try client.getRegionByID(r.id, false);
         defer {
-            gpa.free(r2.start_key);
-            gpa.free(r2.end_key);
+            var r2m = r2;
+            r2m.deinit(gpa);
         }
         std.debug.print("regionByID id={d} start={s} end={s}\n", .{ r2.id, r2.start_key, r2.end_key });
     } else |_| {
@@ -88,8 +94,8 @@ test "pd http smoke: getAllStores, getRegion, getRegionByID, scanRegions" {
     if (!have_region and regs.len > 0) {
         const r3 = try client.getRegionByID(regs[0].id, false);
         defer {
-            gpa.free(r3.start_key);
-            gpa.free(r3.end_key);
+            var r3m = r3;
+            r3m.deinit(gpa);
         }
         std.debug.print("regionByID-from-scan id={d} start={s} end={s}\n", .{ r3.id, r3.start_key, r3.end_key });
     }

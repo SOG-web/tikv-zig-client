@@ -49,7 +49,6 @@ pub fn scanRegions(self: *client_mod.GrpcPDClient, start_key: []const u8, end_ke
 
     // Extract regions
     var regions = std.ArrayList(Region){};
-    defer regions.deinit(self.allocator);
 
     try regions.ensureTotalCapacityPrecise(self.allocator, resp.regions.items.len);
 

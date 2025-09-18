@@ -4,6 +4,7 @@ const types = @import("../types.zig");
 const tctx = @import("../transport_ctx.zig");
 const util = @import("util.zig");
 const api = @import("api.zig");
+const json_helpers = @import("json_helpers.zig");
 
 const http = util.http;
 const Uri = util.Uri;
@@ -53,23 +54,11 @@ pub fn getStore(ctx: *const tctx.TransportCtx, http_client: *std.http.Client, st
 
             const obj = parsed.value.object;
 
-            const store_obj_val = obj.get("store") orelse {
-                continue;
-            }; // MetaStore under key "store"
-            const store_obj = store_obj_val.object;
-
-            const id_val = store_obj.get("id") orelse {
-                continue;
+            // Use helper to parse Store from wrapped JSON
+            return json_helpers.parseStoreFromWrappedJson(ctx.allocator, obj) catch |err| {
+                if (err == error.OutOfMemory) return Error.OutOfMemory;
+                continue; // try next endpoint on parse error
             };
-            const addr_val = store_obj.get("address") orelse {
-                continue;
-            };
-
-            const id_u64: u64 = @intCast(id_val.integer);
-            const addr_str = addr_val.string;
-            const addr = try ctx.allocator.dupe(u8, addr_str);
-
-            return Store{ .id = id_u64, .address = addr };
         }
     }
 

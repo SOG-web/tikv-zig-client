@@ -37,9 +37,10 @@ pub fn getStore(self: *client_mod.GrpcPDClient, store_id: u64) Error!Store {
     var resp = pdpb.GetStoreResponse.decode(&reader, self.allocator) catch return Error.RpcError;
     defer resp.deinit(self.allocator);
 
-    // Extract store
+    // Extract store - deep copy before resp.deinit frees decoder-owned memory
     if (resp.store) |store| {
-        return store;
+        const copy = store.dupe(self.allocator) catch return Error.OutOfMemory;
+        return copy;
     } else {
         return Error.NotFound;
     }

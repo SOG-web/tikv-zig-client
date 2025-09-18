@@ -39,12 +39,13 @@ pub fn getAllStores(self: *client_mod.GrpcPDClient) Error![]Store {
 
     // Extract stores
     var stores = std.ArrayList(Store){};
-    defer stores.deinit(self.allocator);
 
     try stores.ensureTotalCapacityPrecise(self.allocator, resp.stores.items.len);
 
     for (resp.stores.items) |store| {
-        try stores.append(self.allocator, store);
+        // Deep copy to detach from decoder-owned memory
+        const scopy = store.dupe(self.allocator) catch return Error.OutOfMemory;
+        try stores.append(self.allocator, scopy);
     }
 
     return stores.toOwnedSlice(self.allocator);

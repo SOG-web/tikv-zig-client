@@ -38,9 +38,10 @@ pub fn getRegionByID(self: *client_mod.GrpcPDClient, region_id: u64, need_bucket
     var resp = pdpb.GetRegionResponse.decode(&reader, self.allocator) catch return Error.RpcError;
     defer resp.deinit(self.allocator);
 
-    // Extract region
+    // Extract region - deep copy before resp.deinit frees decoder-owned memory
     if (resp.region) |region| {
-        return region;
+        const copy = region.dupe(self.allocator) catch return Error.OutOfMemory;
+        return copy;
     } else {
         return Error.NotFound;
     }

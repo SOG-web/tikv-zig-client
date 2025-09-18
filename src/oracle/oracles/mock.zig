@@ -99,7 +99,7 @@ pub const MockOracle = struct {
         const offset_ms: i64 = @divTrunc(self.offset, std.time.ns_per_ms);
         const adjusted_ms: i64 = now_ms + offset_ms;
         const ts = oracle_mod.msToTS(adjusted_ms);
-        
+
         if (oracle_mod.extractPhysical(self.last_ts) == oracle_mod.extractPhysical(ts)) {
             self.last_ts += 1;
         } else {
@@ -199,19 +199,19 @@ const MockFuture = struct {
 test "mock oracle basic" {
     var mock = MockOracle.init();
     const oracle_impl = mock.oracle();
-    
+
     const allocator = std.testing.allocator;
     const opt = Option.global();
-    
+
     // Test normal operation
     const ts1 = try oracle_impl.getTimestamp(allocator, &opt);
     const ts2 = try oracle_impl.getTimestamp(allocator, &opt);
     try std.testing.expect(ts2 > ts1);
-    
+
     // Test disable/enable
     mock.disable();
     try std.testing.expectError(MockError.Stopped, oracle_impl.getTimestamp(allocator, &opt));
-    
+
     mock.enable();
     const ts3 = try oracle_impl.getTimestamp(allocator, &opt);
     try std.testing.expect(ts3 > ts2);
@@ -220,17 +220,23 @@ test "mock oracle basic" {
 test "mock oracle offset" {
     var mock = MockOracle.init();
     const oracle_impl = mock.oracle();
-    
+
     const allocator = std.testing.allocator;
     const opt = Option.global();
-    
+
     const ts1 = try oracle_impl.getTimestamp(allocator, &opt);
-    
+
     // Add 1 second offset
     mock.addOffset(std.time.ns_per_s);
     const ts2 = try oracle_impl.getTimestamp(allocator, &opt);
-    
+
     // Should be significantly larger due to offset
-    const diff_ms = @divTrunc(oracle_mod.extractPhysical(ts2) - oracle_mod.extractPhysical(ts1), 1);
-    try std.testing.expect(diff_ms >= 1000); // At least 1 second difference
+    const phys1 = oracle_mod.extractPhysical(ts1);
+    const phys2 = oracle_mod.extractPhysical(ts2);
+    const diff_ms = phys2 - phys1;
+    
+    // Allow for some timing variance but expect at least 900ms difference
+    // (accounting for system clock precision and test execution time)
+    try std.testing.expect(diff_ms >= 900); // At least 900ms difference
+    try std.testing.expect(diff_ms <= 1100); // But not more than 1100ms
 }

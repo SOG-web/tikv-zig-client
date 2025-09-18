@@ -57,11 +57,11 @@ pub const GrpcClient = struct {
         // Prepare optional auth token
         var token_opt: ?[]const u8 = null;
         if (self.auth) |*auth_client| {
-            std.debug.print("Generating auth token\n", .{});
+            // std.debug.print("Generating auth token\n", .{});
             token_opt = try auth_client.generateToken("client", 3600);
         }
         defer if (token_opt) |t| self.allocator.free(t);
-        std.debug.print("Auth token: {any}\n", .{token_opt});
+        // std.debug.print("Auth token: {any}\n", .{token_opt});
         // Ensure path starts with '/'
         var path_owned: ?[]const u8 = null;
         const path: []const u8 = blk: {
@@ -71,7 +71,7 @@ pub const GrpcClient = struct {
             break :blk p;
         };
         defer if (path_owned) |p| self.allocator.free(p);
-        std.debug.print("Path: {s}\n", .{path});
+        // std.debug.print("Path: {s}\n", .{path});
 
         // Call unary transport (transport will frame and optionally compress per gRPC rules)
         return try self.transport.unary(self.authority, path, request, compression_alg, token_opt, timeout_ms);

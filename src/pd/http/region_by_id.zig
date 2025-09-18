@@ -4,6 +4,7 @@ const types = @import("../types.zig");
 const tctx = @import("../transport_ctx.zig");
 const util = @import("util.zig");
 const api = @import("api.zig");
+const json_helpers = @import("json_helpers.zig");
 
 const http = util.http;
 const Uri = util.Uri;
@@ -57,24 +58,11 @@ pub fn getRegionByID(ctx: *const tctx.TransportCtx, http_client: *std.http.Clien
 
             const obj = parsed.value.object;
 
-            const id_val = obj.get("id") orelse {
-                continue;
+            // Use helper to parse Region from JSON
+            return json_helpers.parseRegionFromJson(ctx.allocator, obj) catch |err| {
+                if (err == error.OutOfMemory) return Error.OutOfMemory;
+                continue; // try next endpoint on parse error
             };
-            const start_key_val = obj.get("start_key") orelse {
-                continue;
-            };
-            const end_key_val = obj.get("end_key") orelse {
-                continue;
-            };
-
-            const id_u64: u64 = @intCast(id_val.integer);
-            const start_key_str = start_key_val.string;
-            const end_key_str = end_key_val.string;
-
-            const start_key_bytes = try ctx.allocator.dupe(u8, start_key_str);
-            const end_key_bytes = try ctx.allocator.dupe(u8, end_key_str);
-
-            return Region{ .id = id_u64, .start_key = start_key_bytes, .end_key = end_key_bytes };
         }
     }
 

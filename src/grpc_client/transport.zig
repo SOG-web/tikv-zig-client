@@ -153,12 +153,12 @@ pub const Transport = struct {
     ) ![]u8 {
         const conn_ptr = &self.http2_conn.?;
 
-        std.debug.print("Sending gRPC request - createStream\n", .{});
+        // std.debug.print("Sending gRPC request - createStream\n", .{});
         // Create a new HTTP/2 stream id
         const s = try conn_ptr.createStream();
         const sid: u31 = s.id;
 
-        std.debug.print("Sending gRPC request - createStream - sid: {d}\n", .{sid});
+        // std.debug.print("Sending gRPC request - createStream - sid: {d}\n", .{sid});
 
         // Build request headers as fixed pairs (avoid hashmap iterator issues)
         var pairs = std.ArrayList(hpack.Pair){};
@@ -182,7 +182,7 @@ pub const Transport = struct {
             timeout_hdr_owned = hdr; // ensure lifetime until function exit
             try pairs.append(self.allocator, .{ .name = "grpc-timeout", .value = hdr });
 
-            std.debug.print("Sending gRPC request - set grpc-timeout: {s}\n", .{slice});
+            // // std.debug.print("Sending gRPC request - set grpc-timeout: {s}\n", .{slice});
         }
         switch (alg) {
             .none => {},
@@ -195,7 +195,7 @@ pub const Transport = struct {
         // HPACK encode
         const encoded_headers = try conn_ptr.encoder.encodePairs(pairs.items);
 
-        std.debug.print("Sending gRPC request - encoded headers: {s}\n", .{encoded_headers});
+        // // std.debug.print("Sending gRPC request - encoded headers: {s}\n", .{encoded_headers});
 
         // Send HEADERS frame
         var headers_frame = try http2.frame.Frame.init(self.allocator);

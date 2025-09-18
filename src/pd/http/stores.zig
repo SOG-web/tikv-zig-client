@@ -4,6 +4,7 @@ const types = @import("../types.zig");
 const tctx = @import("../transport_ctx.zig");
 const util = @import("util.zig");
 const api = @import("api.zig");
+const json_helpers = @import("json_helpers.zig");
 
 const http = util.http;
 const Uri = util.Uri;
@@ -56,21 +57,22 @@ pub fn getAllStores(ctx: *const tctx.TransportCtx, http_client: *std.http.Client
 
             var out = std.ArrayList(Store){};
             errdefer {
-                for (out.items) |s| ctx.allocator.free(s.address);
+                for (out.items) |*s| {
+                    s.deinit(ctx.allocator);
+                }
                 out.deinit(ctx.allocator);
             }
 
             for (arr.items) |item| {
                 const wrapper = item.object; // each item has fields: store, status
-                const store_obj_val = wrapper.get("store") orelse continue;
-                const store_obj = store_obj_val.object;
-                const id_val = store_obj.get("id") orelse continue;
-                const addr_val = store_obj.get("address") orelse continue;
 
-                const id_u64: u64 = @intCast(id_val.integer);
-                const addr_str = addr_val.string;
-                const addr = try ctx.allocator.dupe(u8, addr_str);
-                try out.append(ctx.allocator, .{ .id = id_u64, .address = addr });
+                // Use helper to parse Store from wrapped JSON
+                const store = json_helpers.parseStoreFromWrappedJson(ctx.allocator, wrapper) catch |err| {
+                    if (err == error.OutOfMemory) return Error.OutOfMemory;
+                    continue; // skip malformed store
+                };
+
+                try out.append(ctx.allocator, store);
             }
 
             const result = out.toOwnedSlice(ctx.allocator);

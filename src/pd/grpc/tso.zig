@@ -37,9 +37,10 @@ pub fn getTS(self: *client_mod.GrpcPDClient) Error!types.TSOResult {
     var resp = tsopb.TsoResponse.decode(&reader, self.allocator) catch return Error.RpcError;
     defer resp.deinit(self.allocator);
 
-    // Extract timestamp
+    // Extract timestamp - deep copy before resp.deinit frees decoder-owned memory
     if (resp.timestamp) |ts| {
-        return ts;
+        const copy = ts.dupe(self.allocator) catch return Error.OutOfMemory;
+        return copy;
     } else {
         return Error.RpcError;
     }

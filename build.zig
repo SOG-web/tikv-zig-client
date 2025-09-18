@@ -102,6 +102,11 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
+    // Build options (feature flags)
+    const opt_pd_http_debug = b.option(bool, "pd_http_debug", "Enable PD HTTP JSON debug logging") orelse false;
+    const build_opts = b.addOptions();
+    build_opts.addOption(bool, "pd_http_debug", opt_pd_http_debug);
+
     const mod = b.addModule("client_zig", .{
         .root_source_file = b.path("src/root.zig"),
 
@@ -115,6 +120,7 @@ pub fn build(b: *std.Build) !void {
             // .{ .name = "grpc_zig", .module = grpc_zig.module("grpc_zig") },
         },
     });
+    mod.addOptions("build_options", build_opts);
 
     // Link local OpenSSL for TLS support
     const openssl_path = "third_party/openssl-build";
@@ -139,6 +145,7 @@ pub fn build(b: *std.Build) !void {
             },
         }),
     });
+    exe.root_module.addOptions("build_options", build_opts);
 
     exe.root_module.addImport("protobuf", protobuf_dep.module("protobuf"));
 
@@ -166,6 +173,7 @@ pub fn build(b: *std.Build) !void {
     const mod_tests = b.addTest(.{
         .root_module = mod,
     });
+    mod_tests.root_module.addOptions("build_options", build_opts);
 
     // Link OpenSSL for module tests
     mod_tests.addIncludePath(b.path(openssl_path ++ "/include"));
@@ -181,6 +189,7 @@ pub fn build(b: *std.Build) !void {
     const exe_tests = b.addTest(.{
         .root_module = exe.root_module,
     });
+    exe_tests.root_module.addOptions("build_options", build_opts);
 
     // Link OpenSSL for executable tests
     exe_tests.addIncludePath(b.path(openssl_path ++ "/include"));

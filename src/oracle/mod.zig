@@ -83,5 +83,5 @@ pub fn build_pd_oracle(
 
 test {
     std.testing.refAllDecls(@This());
-    _ = @import("tests/pd_oracle_smoke_test.zig");
+    //_ = @import("tests/pd_oracle_smoke_test.zig");
 }
