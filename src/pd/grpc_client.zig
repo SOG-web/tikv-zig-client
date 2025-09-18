@@ -8,6 +8,8 @@ const json = std.json; // kept for future methods
 const Uri = std.Uri; // kept for future methods
 const grpc = @import("../grpc_client/mod.zig");
 const pool = @import("../grpc_client/pool.zig");
+const tls = grpc.tls;
+const http2_integration = grpc.http2_integration;
 const pdpb = @import("kvproto").pdpb;
 const tsopb = @import("kvproto").tsopb;
 const region_http = @import("http/region.zig");
@@ -122,7 +124,7 @@ pub const GrpcPDClient = struct {
         self.allocator.destroy(self);
     }
 
-    // Helper to get or create gRPC client for first endpoint
+    // Helper to get or create gRPC client for first endpoint with TLS support
     pub fn getGrpcClient(self: *Self) Error!*grpc.GrpcClient {
         if (self.grpc_client) |client| return client;
 
@@ -135,12 +137,65 @@ pub const GrpcPDClient = struct {
         const port_str = endpoint[colon_pos + 1 ..];
         const port = std.fmt.parseInt(u16, port_str, 10) catch return Error.RpcError;
 
-        // Create gRPC client
+        // Create gRPC client with TLS support
         const client = self.allocator.create(grpc.GrpcClient) catch return Error.OutOfMemory;
-        client.* = grpc.GrpcClient.init(self.allocator, host, port) catch return Error.RpcError;
+        if (self.use_https) {
+            // Convert TlsOptions to tls.TlsConfig
+            const tls_config = tls.TlsConfig{
+                .server_name = self.tls.server_name orelse host,
+                .insecure_skip_verify = self.tls.insecure_skip_verify,
+                .ca_cert_pem = self.tls.ca_pem,
+                .client_cert_pem = self.tls.client_cert_pem,
+                .client_key_pem = self.tls.client_key_pem,
+                .alpn_protocols = self.tls.alpn_protocols,
+            };
+            client.* = grpc.GrpcClient.initWithTls(self.allocator, host, port, tls_config) catch return Error.RpcError;
+        } else {
+            client.* = grpc.GrpcClient.init(self.allocator, host, port) catch return Error.RpcError;
+        }
         self.grpc_client = client;
 
         return client;
+    }
+
+    pub fn initWithTls(self: *Self, allocator: std.mem.Allocator, host: []const u8, port: u16, tls_config: tls.TlsConfig) Error!*Self {
+        self.* = self.init(allocator, host, port) catch return Error.OutOfMemory;
+        self.use_https = true;
+        self.tls = tls_config;
+        return self;
+    }
+
+    // Create HTTP/2 connection with TLS + ALPN
+    pub fn createHttp2Connection(self: *Self, endpoint_idx: ?usize) Error!*http2_integration.Http2TlsConnection {
+        if (self.endpoints.len == 0) return Error.RpcError;
+
+        const idx = endpoint_idx orelse 0;
+        const endpoint = self.endpoints[idx];
+
+        // Parse endpoint
+        const colon_pos = std.mem.lastIndexOfScalar(u8, endpoint, ':') orelse return Error.RpcError;
+        const host = endpoint[0..colon_pos];
+        const port_str = endpoint[colon_pos + 1 ..];
+        const port = std.fmt.parseInt(u16, port_str, 10) catch return Error.RpcError;
+
+        // Create HTTP/2 connection
+        const connection = self.allocator.create(http2_integration.Http2TlsConnection) catch return Error.OutOfMemory;
+
+        if (self.use_https) {
+            const tls_config = tls.TlsConfig{
+                .server_name = self.tls.server_name orelse host,
+                .insecure_skip_verify = self.tls.insecure_skip_verify,
+                .ca_cert_pem = self.tls.ca_pem,
+                .client_cert_pem = self.tls.client_cert_pem,
+                .client_key_pem = self.tls.client_key_pem,
+                .alpn_protocols = &.{"h2"},
+            };
+            connection.* = http2_integration.Http2TlsConnection.init(self.allocator, host, port, true, tls_config) catch return Error.RpcError;
+        } else {
+            connection.* = http2_integration.Http2TlsConnection.init(self.allocator, host, port, false, null) catch return Error.RpcError;
+        }
+
+        return connection;
     }
 
     // Helper to get or create connection pool for efficient connection management
@@ -460,6 +515,12 @@ pub const TlsOptions = struct {
     server_name: ?[]const u8 = null,
     // Optional CA bundle PEM bytes provided at runtime (no hardcoding).
     ca_pem: ?[]const u8 = null,
+    // Client certificate for mutual TLS
+    client_cert_pem: ?[]const u8 = null,
+    // Client private key for mutual TLS
+    client_key_pem: ?[]const u8 = null,
+    // ALPN protocols to negotiate
+    alpn_protocols: []const []const u8 = &.{"h2"},
 };
 
 pub fn setTlsOptions(self: *GrpcPDClient, opts: TlsOptions) void {

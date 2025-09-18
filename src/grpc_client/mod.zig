@@ -7,17 +7,24 @@ pub const GrpcClient = @import("client.zig").GrpcClient;
 pub const Transport = @import("transport.zig").Transport;
 pub const GrpcStatusInfo = @import("transport.zig").GrpcStatusInfo;
 
+// TLS and HTTP/2 support
+pub const tls = @import("tls.zig");
+pub const http2_integration = @import("http2_integration.zig");
+// Use existing HTTP/2 implementation
+pub const http2_connection = @import("http2/connection.zig");
+pub const http2_frame = @import("http2/frame.zig");
+
 // Feature modules: expose entire modules to avoid symbol drift.
 pub const features = struct {
     pub const compression = @import("features/compression.zig");
     pub const auth = @import("features/auth.zig");
-    pub const streaming = @import("features/streaming.zig");
+    pub const streaming_features = @import("features/streaming.zig");
     pub const health = @import("features/health.zig");
 
     test {
         _ = compression;
         _ = auth;
-        _ = streaming;
+        _ = streaming_features;
         _ = health;
     }
 };
@@ -44,8 +51,13 @@ pub const http2 = struct {
 test {
     _ = GrpcClient;
     _ = Transport;
+    _ = tls;
+    _ = http2_integration;
+    _ = http2_connection;
+    _ = http2_frame;
     _ = features;
     _ = http2;
     // _ = @import("tests/transport_test.zig");
     _ = @import("tests/pool_test.zig");
+    _ = @import("tests/simple_test.zig");
 }

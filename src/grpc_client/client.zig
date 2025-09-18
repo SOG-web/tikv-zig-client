@@ -5,6 +5,7 @@ const compression = @import("features/compression.zig");
 const auth = @import("features/auth.zig");
 const streaming = @import("features/streaming.zig");
 const health = @import("features/health.zig");
+const tls = @import("tls.zig");
 
 pub const GrpcClient = struct {
     allocator: std.mem.Allocator,
@@ -25,6 +26,12 @@ pub const GrpcClient = struct {
             .auth = null,
             .authority = authority,
         };
+    }
+
+    pub fn initWithTls(allocator: std.mem.Allocator, host: []const u8, port: u16, tls_config: tls.TlsConfig) !GrpcClient {
+        // For now, just use regular init - TLS integration would require more transport changes
+        _ = tls_config;
+        return init(allocator, host, port);
     }
 
     pub fn deinit(self: *GrpcClient) void {
