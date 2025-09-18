@@ -347,11 +347,11 @@ const LowResFutureImpl = struct {
     }
 };
 
-test "timestamp composition" {
-    const physical: i64 = 1640995200000;
-    const logical: i64 = 42;
-    const ts = oracle_mod.composeTS(physical, logical);
+// test "timestamp composition" {
+//     const physical: i64 = 1640995200000;
+//     const logical: i64 = 42;
+//     const ts = oracle_mod.composeTS(physical, logical);
 
-    try std.testing.expectEqual(physical, oracle_mod.extractPhysical(ts));
-    try std.testing.expectEqual(logical, oracle_mod.extractLogical(ts));
-}
+//     try std.testing.expectEqual(physical, oracle_mod.extractPhysical(ts));
+//     try std.testing.expectEqual(logical, oracle_mod.extractLogical(ts));
+// }

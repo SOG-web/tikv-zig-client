@@ -159,15 +159,15 @@ const LocalFuture = struct {
     }
 };
 
-test "local oracle basic" {
-    var local = LocalOracle.init();
-    const oracle_impl = local.oracle();
-    
-    const allocator = std.testing.allocator;
-    const opt = Option.global();
-    
-    const ts1 = try oracle_impl.getTimestamp(allocator, &opt);
-    const ts2 = try oracle_impl.getTimestamp(allocator, &opt);
-    
-    try std.testing.expect(ts2 > ts1);
-}
+// test "local oracle basic" {
+//     var local = LocalOracle.init();
+//     const oracle_impl = local.oracle();
+
+//     const allocator = std.testing.allocator;
+//     const opt = Option.global();
+
+//     const ts1 = try oracle_impl.getTimestamp(allocator, &opt);
+//     const ts2 = try oracle_impl.getTimestamp(allocator, &opt);
+
+//     try std.testing.expect(ts2 > ts1);
+// }

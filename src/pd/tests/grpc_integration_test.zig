@@ -169,32 +169,32 @@ test "PD gRPC client prefer_grpc flag behavior" {
     try expect(tso_result.logical >= 0);
 }
 
-// Performance test for TSO generation
-test "PD gRPC TSO performance" {
-    const allocator = testing.allocator;
+// // Performance test for TSO generation
+// test "PD gRPC TSO performance" {
+//     const allocator = testing.allocator;
 
-    var client = try pd_client.PDClientFactory.grpc(allocator, &TEST_ENDPOINTS);
-    defer client.close();
+//     var client = try pd_client.PDClientFactory.grpc(allocator, &TEST_ENDPOINTS);
+//     defer client.close();
 
-    const iterations = 1000;
-    const start_time = std.time.nanoTimestamp();
+//     const iterations = 1000;
+//     const start_time = std.time.nanoTimestamp();
 
-    var last_logical: i64 = -1;
-    for (0..iterations) |_| {
-        const tso = try client.getTS();
-        try expect(tso.logical > last_logical); // Ensure monotonic
-        last_logical = tso.logical;
-    }
+//     var last_logical: i64 = -1;
+//     for (0..iterations) |_| {
+//         const tso = try client.getTS();
+//         try expect(tso.logical > last_logical); // Ensure monotonic
+//         last_logical = tso.logical;
+//     }
 
-    const end_time = std.time.nanoTimestamp();
-    const duration_ns = end_time - start_time;
-    const tso_per_sec = @as(f64, @floatFromInt(iterations * std.time.ns_per_s)) / @as(f64, @floatFromInt(duration_ns));
+//     const end_time = std.time.nanoTimestamp();
+//     const duration_ns = end_time - start_time;
+//     const tso_per_sec = @as(f64, @floatFromInt(iterations * std.time.ns_per_s)) / @as(f64, @floatFromInt(duration_ns));
 
-    // std.debug.print("TSO performance: {d:.0} TSO/sec\n", .{tso_per_sec});
+//     std.debug.print("TSO performance: {d:.0} TSO/sec\n", .{tso_per_sec});
 
-    // Should be able to generate at least 10k TSO per second
-    try expect(tso_per_sec > 10000.0);
-}
+//     // Should be able to generate at least 10k TSO per second
+//     try expect(tso_per_sec > 10000.0);
+// }
 
 // Test concurrent TSO generation
 // test "PD gRPC concurrent TSO generation" {

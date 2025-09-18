@@ -36,7 +36,7 @@ test "pd grpc smoke: GetMembers" {
     var client = try grpc.GrpcClient.init(gpa, hp.host, hp.port);
     defer client.deinit();
 
-    std.debug.print("PD gRPC call: {any}\n", .{ep});
+    std.debug.print("PD gRPC call: {s}\n", .{ep});
 
     // Build empty GetMembersRequest
     var req = pdpb.GetMembersRequest{};

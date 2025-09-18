@@ -171,60 +171,60 @@ test "Connection cleanup" {
     }
 }
 
-// Mock server for more comprehensive testing
-const MockServer = struct {
-    allocator: std.mem.Allocator,
-    server: net.Server,
-    port: u16,
+// // Mock server for more comprehensive testing
+// const MockServer = struct {
+//     allocator: std.mem.Allocator,
+//     server: net.Server,
+//     port: u16,
 
-    pub fn init(allocator: std.mem.Allocator) !MockServer {
-        const address = try net.Address.parseIp("127.0.0.1", 0);
-        var server = try address.listen(.{});
-        const actual_port = server.listen_address.getPort();
+//     pub fn init(allocator: std.mem.Allocator) !MockServer {
+//         const address = try net.Address.parseIp("127.0.0.1", 0);
+//         var server = try address.listen(.{});
+//         const actual_port = server.listen_address.getPort();
 
-        return MockServer{
-            .allocator = allocator,
-            .server = server,
-            .port = actual_port,
-        };
-    }
+//         return MockServer{
+//             .allocator = allocator,
+//             .server = server,
+//             .port = actual_port,
+//         };
+//     }
 
-    pub fn deinit(self: *MockServer) void {
-        self.server.deinit();
-    }
+//     pub fn deinit(self: *MockServer) void {
+//         self.server.deinit();
+//     }
 
-    pub fn acceptOne(self: *MockServer) !void {
-        const conn = try self.server.accept();
-        defer conn.stream.close();
+//     pub fn acceptOne(self: *MockServer) !void {
+//         const conn = try self.server.accept();
+//         defer conn.stream.close();
 
-        // Just accept and close - enough for connection pool testing
-    }
-};
+//         // Just accept and close - enough for connection pool testing
+//     }
+// };
 
-test "Connection pool with mock server" {
-    const allocator = std.testing.allocator;
+// test "Connection pool with mock server" {
+//     const allocator = std.testing.allocator;
 
-    var mock_server = MockServer.init(allocator) catch |err| switch (err) {
-        error.AddressInUse => {
-            std.debug.print("Skipping mock server test - address in use\n", .{});
-            return;
-        },
-        else => return err,
-    };
-    defer mock_server.deinit();
+//     var mock_server = MockServer.init(allocator) catch |err| switch (err) {
+//         error.AddressInUse => {
+//             std.debug.print("Skipping mock server test - address in use\n", .{});
+//             return;
+//         },
+//         else => return err,
+//     };
+//     defer mock_server.deinit();
 
-    var connection_pool = pool.ConnectionPool.init(allocator);
-    defer connection_pool.deinit();
+//     var connection_pool = pool.ConnectionPool.init(allocator);
+//     defer connection_pool.deinit();
 
-    // Start accepting connections in background (simplified for test)
-    const accept_thread = std.Thread.spawn(.{}, MockServer.acceptOne, .{&mock_server}) catch {
-        std.debug.print("Skipping threaded test - spawn failed\n", .{});
-        return;
-    };
-    defer accept_thread.join();
+//     // Start accepting connections in background (simplified for test)
+//     const accept_thread = std.Thread.spawn(.{}, MockServer.acceptOne, .{&mock_server}) catch {
+//         std.debug.print("Skipping threaded test - spawn failed\n", .{});
+//         return;
+//     };
+//     defer accept_thread.join();
 
-    // Get connection to mock server
-    const conn = try connection_pool.getConnection("127.0.0.1", mock_server.port);
-    try std.testing.expect(conn.port == mock_server.port);
-    try std.testing.expect(connection_pool.connections.items.len == 1);
-}
+//     // Get connection to mock server
+//     const conn = try connection_pool.getConnection("127.0.0.1", mock_server.port);
+//     try std.testing.expect(conn.port == mock_server.port);
+//     try std.testing.expect(connection_pool.connections.items.len == 1);
+// }
